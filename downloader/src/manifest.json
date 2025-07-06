@@ -1,0 +1,13 @@
+{
+    "manifest_version": 3,
+    "name": "サンプル拡張機能",
+    "version": "1.0.0",
+    "description": "TypeScript+webpackで開発するChrome拡張のサンプル",
+    "background": {
+        "service_worker": "bundle.js"
+    },
+    "permissions": [],
+    "action": {
+        "default_title": "サンプル"
+    }
+}

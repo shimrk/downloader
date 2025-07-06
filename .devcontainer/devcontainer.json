@@ -1,0 +1,21 @@
+{
+    // VS Code Dev Containers 設定ファイル
+    "name": "Chrome Extension DevContainer",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "settings": {
+        // Windows環境でのファイル監視設定
+        "files.watcherExclude": {
+            "**/node_modules/**": true,
+            "**/dist/**": true
+        }
+    },
+    "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next"
+    ],
+    "forwardPorts": [],
+    "remoteUser": "node"
+}
