@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "Chrome拡張機能のDocker開発環境",
   "scripts": {
-    "dev": "./scripts/dev-webpack-only.sh",
-    "dev:webpack": "./scripts/dev-webpack-only.sh"
+    "dev": "./scripts/dev-webpack-only.sh"
   },
   "keywords": ["chrome-extension", "docker", "development"],
   "author": "",

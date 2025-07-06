@@ -1,0 +1,157 @@
+# Chrome拡張機能開発 - Cursor Rules
+
+## プロジェクト概要
+このプロジェクトは、Chrome拡張機能を使用してブラウザ内の動画を検出・ダウンロードする機能を提供します。
+
+## アーキテクチャ
+
+### ファイル構造
+```
+downloader/
+├── src/
+│   ├── background.ts      # バックグラウンドスクリプト（サービスワーカー）
+│   ├── content.ts         # コンテンツスクリプト（動画検出）
+│   ├── popup.ts           # ポップアップスクリプト（UI制御）
+│   ├── popup.html         # ポップアップUI
+│   └── manifest.json      # 拡張機能マニフェスト
+├── dist/                  # ビルド出力ディレクトリ
+├── webpack.config.js      # Webpack設定
+└── tsconfig.json          # TypeScript設定
+```
+
+### コンポーネント説明
+
+#### 1. Content Script (content.ts)
+- **役割**: ページ内の動画要素を検出
+- **機能**:
+  - `<video>`要素の検出
+  - `<source>`要素の検出
+  - `<iframe>`要素（埋め込み動画）の検出
+  - DOM変更の監視（MutationObserver）
+  - バックグラウンドスクリプトとの通信
+
+#### 2. Background Script (background.ts)
+- **役割**: 拡張機能のメインロジック
+- **機能**:
+  - 動画情報の管理
+  - ダウンロード処理
+  - タブ管理
+  - コンテンツスクリプトとの通信
+
+#### 3. Popup (popup.ts + popup.html)
+- **役割**: ユーザーインターフェース
+- **機能**:
+  - 動画一覧の表示
+  - ダウンロード操作
+  - 検索・クリア機能
+
+## 開発ガイドライン
+
+### TypeScript
+- 厳密な型チェックを有効にする
+- Chrome APIの型定義は `declare const chrome: any;` を使用
+- インターフェースを定義してデータ構造を明確にする
+
+### 通信パターン
+```typescript
+// Content Script → Background Script
+chrome.runtime.sendMessage({
+    action: 'updateVideos',
+    videos: videoArray
+});
+
+// Popup → Background Script
+chrome.runtime.sendMessage({
+    action: 'getVideos'
+}, (response) => {
+    // レスポンス処理
+});
+
+// Background Script → Content Script
+chrome.tabs.sendMessage(tabId, {
+    action: 'refreshVideos'
+});
+```
+
+### エラーハンドリング
+- すべての非同期処理でtry-catchを使用
+- ユーザーフレンドリーなエラーメッセージを表示
+- Chrome APIのエラーを適切に処理
+
+### UI/UX設計
+- モダンで直感的なデザイン
+- ローディング状態の表示
+- 成功・エラー状態のフィードバック
+- レスポンシブなレイアウト
+
+## セキュリティ考慮事項
+
+### 権限
+- 必要最小限の権限のみを要求
+- `activeTab`: アクティブなタブのみアクセス
+- `downloads`: ファイルダウンロード機能
+- `storage`: 設定の保存
+- `scripting`: コンテンツスクリプトの実行
+
+### データ処理
+- ユーザーデータの暗号化
+- 安全なファイル名生成
+- XSS対策（HTMLエスケープ）
+
+## デバッグ・テスト
+
+### Chrome DevTools
+- バックグラウンドスクリプト: `chrome://inspect/#extensions`
+- コンテンツスクリプト: ページのDevTools
+- ポップアップ: ポップアップを右クリック → 検証
+
+### ログ出力
+```typescript
+console.log('Debug info:', data);
+console.error('Error occurred:', error);
+```
+
+## パフォーマンス最適化
+
+### 動画検出
+- 定期的な再検出（5秒間隔）
+- DOM変更の監視（MutationObserver）
+- 重複検出の回避
+
+### メモリ管理
+- 不要なイベントリスナーの削除
+- 大きなデータの適切な処理
+- タブ切り替え時のクリーンアップ
+
+## 拡張機能の配布
+
+### ビルド
+```bash
+npm run build  # 本番用ビルド
+npm run dev    # 開発用ビルド（監視モード）
+```
+
+### パッケージング
+- `dist/`ディレクトリをZIP化
+- Chrome Web Storeにアップロード
+
+## トラブルシューティング
+
+### よくある問題
+1. **動画が検出されない**
+   - コンテンツスクリプトが正しく読み込まれているか確認
+   - ページの読み込み完了を待つ
+
+2. **ダウンロードが失敗する**
+   - CORS設定を確認
+   - ファイルURLの有効性を確認
+
+3. **ポップアップが表示されない**
+   - manifest.jsonの設定を確認
+   - ファイルパスが正しいか確認
+
+### デバッグ手順
+1. 拡張機能を再読み込み
+2. ブラウザのコンソールを確認
+3. ネットワークタブでリクエストを確認
+4. 拡張機能の権限を確認 

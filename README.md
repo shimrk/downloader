@@ -1,103 +1,142 @@
-# Downloader
+# 🎥 動画ダウンローダー Chrome拡張機能
 
-ブラウザ拡張機能用のダウンローダープロジェクトです。
+ブラウザ内の動画やストリーミング動画を検出し、簡単にダウンロードできるChrome拡張機能です。
 
-## 概要
+## ✨ 機能
 
-このプロジェクトは、ブラウザ拡張機能の開発用リポジトリです。
+- **自動動画検出**: ページ内の動画要素を自動的に検出
+- **多様な動画形式対応**: `<video>`、`<source>`、`<iframe>`要素をサポート
+- **リアルタイム監視**: DOM変更を監視して動的に追加される動画も検出
+- **直感的なUI**: モダンで使いやすいポップアップインターフェース
+- **安全なダウンロード**: ChromeのダウンロードAPIを使用した安全なダウンロード
 
-## 開発環境
+## 🚀 セットアップ
 
-- Node.js
-- Git
-
-## セットアップ
-
-1. リポジトリをクローン
-2. 依存関係をインストール
-3. 開発サーバーを起動
-
-## 使用方法
-
-詳細な使用方法については、各コンポーネントのドキュメントを参照してください。
-
-## ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています。
-
-# Chrome拡張機能開発環境 (Dev Container)
-
-TypeScript + webpackを使用したChrome拡張機能の開発環境です。
-
-## 前提条件
-
-### Windows環境でのセットアップ
-
-1. **Docker Desktop for Windows** をインストール
-   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) からダウンロード
-   - インストール後、Docker Desktopを起動
-
-2. **WSL2** の有効化（推奨）
-   ```powershell
-   # PowerShellを管理者として実行
-   dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-   dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
-   ```
-
-3. **VS Code** と **Remote-Containers** 拡張機能のインストール
-   - VS Code: https://code.visualstudio.com/
-   - Remote-Containers拡張機能をインストール
-
-## 開発環境の起動
-
-1. VS Codeでこのプロジェクトを開く
-2. `Ctrl+Shift+P` でコマンドパレットを開く
-3. `Remote-Containers: Reopen in Container` を選択
-4. コンテナのビルドが完了するまで待つ
-
-## 開発コマンド
+### 1. 依存関係のインストール
 
 ```bash
-# 開発モード（ファイル監視）
-npm run dev
-
-# 本番ビルド
-npm run build
+cd downloader
+npm install
 ```
 
-## Chrome拡張機能のテスト
+### 2. 開発サーバーの起動
 
-1. `npm run build` でビルド実行
-2. Chromeで `chrome://extensions/` を開く
-3. 「デベロッパーモード」を有効化
-4. 「パッケージ化されていない拡張機能を読み込む」をクリック
-5. `downloader/dist` フォルダを選択
+```bash
+npm run dev
+```
 
-## ファイル構成
+### 3. Chrome拡張機能の読み込み
+
+1. Chromeで `chrome://extensions/` を開く
+2. 「デベロッパーモード」を有効化
+3. 「パッケージ化されていない拡張機能を読み込む」をクリック
+4. `downloader/dist` ディレクトリを選択
+
+## 📖 使用方法
+
+### 動画の検出とダウンロード
+
+1. **動画が含まれるページを開く**
+2. **拡張機能アイコンをクリック**してポップアップを開く
+3. **「動画を検索」ボタンをクリック**して動画を検出
+4. **検出された動画一覧からダウンロードしたい動画を選択**
+5. **「ダウンロード」ボタンをクリック**してダウンロード開始
+
+### サポートされる動画形式
+
+- **HTML5 Video**: `<video>`要素
+- **Video Sources**: `<source>`要素（MP4、WebM、OGG）
+- **埋め込み動画**: YouTube、Vimeo、Dailymotionなどのiframe
+
+## 🛠️ 開発
+
+### プロジェクト構造
 
 ```
 downloader/
 ├── src/
-│   ├── background.ts    # バックグラウンドスクリプト
-│   └── manifest.json    # 拡張機能のマニフェスト
-├── dist/                # ビルド出力先
-├── package.json         # 依存関係とスクリプト
-├── tsconfig.json        # TypeScript設定
-└── webpack.config.js    # webpack設定
+│   ├── background.ts      # バックグラウンドスクリプト
+│   ├── content.ts         # コンテンツスクリプト（動画検出）
+│   ├── popup.ts           # ポップアップスクリプト
+│   ├── popup.html         # ポップアップUI
+│   └── manifest.json      # 拡張機能マニフェスト
+├── dist/                  # ビルド出力
+├── webpack.config.js      # Webpack設定
+└── tsconfig.json          # TypeScript設定
 ```
 
-## トラブルシューティング
+### 利用可能なコマンド
 
-### Windows環境でのよくある問題
+```bash
+npm run dev      # 開発モード（監視）
+npm run build    # 本番ビルド
+```
 
-1. **Docker Desktopが起動しない**
-   - Windows Updateを実行
-   - BIOSで仮想化を有効化
+### デバッグ
 
-2. **ファイル監視が遅い**
-   - WSL2を使用していることを確認
-   - Docker Desktopの設定でWSL2バックエンドを有効化
+- **バックグラウンドスクリプト**: `chrome://inspect/#extensions`
+- **コンテンツスクリプト**: ページのDevTools
+- **ポップアップ**: ポップアップを右クリック → 検証
 
-3. **パーミッションエラー**
-   - プロジェクトフォルダをWindowsのユーザーフォルダ外に配置
-   - Docker Desktopの設定でファイル共有を確認 
+## 🔧 技術仕様
+
+### 使用技術
+
+- **TypeScript**: 型安全な開発
+- **Webpack**: モジュールバンドリング
+- **Chrome Extension Manifest V3**: 最新の拡張機能API
+- **MutationObserver**: DOM変更の監視
+
+### アーキテクチャ
+
+1. **Content Script**: ページ内の動画要素を検出
+2. **Background Script**: 動画管理とダウンロード処理
+3. **Popup**: ユーザーインターフェース
+
+### 通信フロー
+
+```
+Content Script → Background Script → Popup
+     ↓              ↓              ↓
+  動画検出      動画管理・ダウンロード    UI表示
+```
+
+## 🔒 セキュリティ
+
+### 権限
+
+- `activeTab`: アクティブなタブのみアクセス
+- `downloads`: ファイルダウンロード機能
+- `storage`: 設定の保存
+- `scripting`: コンテンツスクリプトの実行
+
+### データ保護
+
+- ユーザーデータの暗号化
+- 安全なファイル名生成
+- XSS対策（HTMLエスケープ）
+
+## 🐛 トラブルシューティング
+
+### よくある問題
+
+**Q: 動画が検出されません**
+A: ページの読み込み完了を待ってから「動画を検索」ボタンをクリックしてください。
+
+**Q: ダウンロードが失敗します**
+A: 動画のURLが有効かどうか確認してください。一部の動画はCORS制限によりダウンロードできない場合があります。
+
+**Q: 拡張機能が動作しません**
+A: 拡張機能を再読み込みして、ブラウザのコンソールでエラーを確認してください。
+
+## 📝 ライセンス
+
+このプロジェクトはMITライセンスの下で公開されています。
+
+## 🤝 貢献
+
+プルリクエストやイシューの報告を歓迎します！
+
+## 📞 サポート
+
+問題が発生した場合は、GitHubのイシューページで報告してください。 

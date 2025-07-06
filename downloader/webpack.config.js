@@ -3,9 +3,13 @@ const fs = require('fs');
 
 module.exports = {
     mode: 'development',
-    entry: './src/background.ts',
+    entry: {
+        background: './src/background.ts',
+        content: './src/content.ts',
+        popup: './src/popup.ts'
+    },
     output: {
-        filename: 'bundle.js',
+        filename: '[name].js',
         path: path.resolve(__dirname, 'dist'),
         clean: true, // ビルド時にdistディレクトリをクリーン
     },
@@ -28,17 +32,27 @@ module.exports = {
         poll: 1000, // 1秒ごとにポーリング
         aggregateTimeout: 300, // 変更をまとめて処理
     },
-    // ビルド完了時にmanifest.jsonをコピー
+    // ビルド完了時にmanifest.jsonとpopup.htmlをコピー
     plugins: [
         {
             apply: (compiler) => {
-                compiler.hooks.afterEmit.tap('CopyManifestPlugin', () => {
+                compiler.hooks.afterEmit.tap('CopyFilesPlugin', () => {
+                    // manifest.jsonをコピー
                     const sourceManifest = path.join(__dirname, 'src/manifest.json');
                     const targetManifest = path.join(__dirname, 'dist/manifest.json');
                     
                     if (fs.existsSync(sourceManifest)) {
                         fs.copyFileSync(sourceManifest, targetManifest);
                         console.log('✅ manifest.jsonをdistディレクトリにコピーしました');
+                    }
+
+                    // popup.htmlをコピー
+                    const sourcePopup = path.join(__dirname, 'src/popup.html');
+                    const targetPopup = path.join(__dirname, 'dist/popup.html');
+                    
+                    if (fs.existsSync(sourcePopup)) {
+                        fs.copyFileSync(sourcePopup, targetPopup);
+                        console.log('✅ popup.htmlをdistディレクトリにコピーしました');
                     }
                 });
             }

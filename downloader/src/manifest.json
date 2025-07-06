@@ -1,13 +1,36 @@
 {
     "manifest_version": 3,
-    "name": "サンプル拡張機能",
+    "name": "動画ダウンローダー",
     "version": "1.0.0",
-    "description": "TypeScript+webpackで開発するChrome拡張のサンプル",
+    "description": "ブラウザ内の動画を検出してダウンロードできるChrome拡張機能",
     "background": {
-        "service_worker": "bundle.js"
+        "service_worker": "background.js"
     },
-    "permissions": [],
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content.js"],
+            "run_at": "document_end"
+        }
+    ],
     "action": {
-        "default_title": "サンプル"
-    }
+        "default_popup": "popup.html",
+        "default_title": "動画ダウンローダー"
+    },
+    "permissions": [
+        "activeTab",
+        "tabs",
+        "downloads",
+        "storage",
+        "scripting"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["popup.js"],
+            "matches": ["<all_urls>"]
+        }
+    ]
 }
