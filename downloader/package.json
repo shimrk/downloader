@@ -4,7 +4,8 @@
     "description": "Chrome拡張機能(TypeScript+webpack)開発用",
     "scripts": {
         "build": "webpack --mode production",
-        "dev": "webpack --mode development --watch"
+        "dev": "webpack --mode development --watch",
+        "dev:webpack": "../scripts/dev-webpack-only.sh"
     },
     "devDependencies": {
         "typescript": "^5.4.0",

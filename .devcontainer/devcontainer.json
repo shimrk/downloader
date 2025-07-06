@@ -16,6 +16,10 @@
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-typescript-next"
     ],
-    "forwardPorts": [],
-    "remoteUser": "node"
+    "forwardPorts": [9222],
+    "remoteUser": "node",
+    "runArgs": [
+        "--privileged",
+        "--security-opt=seccomp:unconfined"
+    ]
 }
