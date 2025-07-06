@@ -4,7 +4,10 @@ import { VideoInfo, Message } from './types/common';
 
 class PopupManager {
     private videos: VideoInfo[] = [];
+    private filteredVideos: VideoInfo[] = [];
     private isRefreshing = false;
+    private currentFilter = 'all';
+    private downloadingVideos = new Set<string>();
 
     constructor() {
         this.init();
@@ -27,6 +30,42 @@ class PopupManager {
         if (clearBtn) {
             clearBtn.addEventListener('click', () => this.clearVideos());
         }
+
+        // フィルターボタン
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.target as HTMLElement;
+                const filter = target.dataset.filter || 'all';
+                this.setFilter(filter);
+            });
+        });
+    }
+
+    private setFilter(filter: string): void {
+        this.currentFilter = filter;
+        
+        // フィルターボタンの状態を更新
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            const btnElement = btn as HTMLElement;
+            if (btnElement.dataset.filter === filter) {
+                btnElement.classList.add('active');
+            } else {
+                btnElement.classList.remove('active');
+            }
+        });
+
+        // 動画をフィルタリング
+        this.filterVideos();
+        this.renderVideos();
+    }
+
+    private filterVideos(): void {
+        if (this.currentFilter === 'all') {
+            this.filteredVideos = [...this.videos];
+        } else {
+            this.filteredVideos = this.videos.filter(video => video.type === this.currentFilter);
+        }
     }
 
     private async loadVideos(): Promise<void> {
@@ -35,6 +74,7 @@ class PopupManager {
             const response = await this.sendMessage({ action: 'getVideos' });
             if (response.videos) {
                 this.videos = response.videos;
+                this.filterVideos();
                 this.renderVideos();
                 
                 // 重複動画の情報を表示
@@ -109,11 +149,19 @@ class PopupManager {
 
     private async clearVideos(): Promise<void> {
         this.videos = [];
+        this.filteredVideos = [];
         this.renderVideos();
         this.showStatus('動画リストをクリアしました', 'success');
     }
 
     private async downloadVideo(videoInfo: VideoInfo): Promise<void> {
+        if (this.downloadingVideos.has(videoInfo.id)) {
+            return; // 既にダウンロード中
+        }
+
+        this.downloadingVideos.add(videoInfo.id);
+        this.updateDownloadButton(videoInfo.id, true);
+
         try {
             const response = await this.sendMessage({
                 action: 'downloadVideo',
@@ -122,12 +170,64 @@ class PopupManager {
 
             if (response.success) {
                 this.showStatus('ダウンロードを開始しました', 'success');
+                this.showDownloadProgress(videoInfo.id);
             } else {
                 throw new Error(response.error || 'ダウンロードに失敗しました');
             }
         } catch (error) {
             console.error('Download failed:', error);
             this.showStatus(error instanceof Error ? error.message : 'ダウンロードに失敗しました', 'error');
+        } finally {
+            this.downloadingVideos.delete(videoInfo.id);
+            this.updateDownloadButton(videoInfo.id, false);
+        }
+    }
+
+    private async previewVideo(videoInfo: VideoInfo): Promise<void> {
+        try {
+            // 新しいタブで動画を開く
+            await chrome.tabs.create({ url: videoInfo.url });
+        } catch (error) {
+            console.error('Preview failed:', error);
+            this.showStatus('プレビューを開けませんでした', 'error');
+        }
+    }
+
+    private updateDownloadButton(videoId: string, isDownloading: boolean): void {
+        const downloadBtn = document.getElementById(`download-${videoId}`) as HTMLButtonElement;
+        if (downloadBtn) {
+            downloadBtn.disabled = isDownloading;
+            if (isDownloading) {
+                downloadBtn.innerHTML = '<span class="loading-spinner"></span> ダウンロード中...';
+            } else {
+                downloadBtn.innerHTML = '⬇️ ダウンロード';
+            }
+        }
+    }
+
+    private showDownloadProgress(videoId: string): void {
+        const videoItem = document.querySelector(`[data-video-id="${videoId}"]`);
+        if (videoItem) {
+            const progressBar = videoItem.querySelector('.progress-bar') as HTMLElement;
+            if (progressBar) {
+                progressBar.style.display = 'block';
+                const progressFill = progressBar.querySelector('.progress-fill') as HTMLElement;
+                if (progressFill) {
+                    // ダウンロード進捗をシミュレート
+                    let progress = 0;
+                    const interval = setInterval(() => {
+                        progress += Math.random() * 10;
+                        if (progress >= 100) {
+                            progress = 100;
+                            clearInterval(interval);
+                            setTimeout(() => {
+                                progressBar.style.display = 'none';
+                            }, 1000);
+                        }
+                        progressFill.style.width = `${progress}%`;
+                    }, 200);
+                }
+            }
         }
     }
 
@@ -135,27 +235,42 @@ class PopupManager {
         const videoList = document.getElementById('videoList');
         if (!videoList) return;
 
-        if (this.videos.length === 0) {
+        if (this.filteredVideos.length === 0) {
+            const filterText = this.currentFilter === 'all' ? '' : `（${this.getFilterDisplayName(this.currentFilter)}）`;
             videoList.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">📹</div>
-                    <div class="empty-state-text">動画が見つかりません</div>
+                    <div class="empty-state-text">動画が見つかりません${filterText}</div>
                     <div class="empty-state-subtext">「動画を検索」ボタンをクリックして検索してください</div>
                 </div>
             `;
             return;
         }
 
-        const videoItems = this.videos.map(video => this.createVideoItem(video)).join('');
+        const videoItems = this.filteredVideos.map(video => this.createVideoItem(video)).join('');
         videoList.innerHTML = videoItems;
 
-        // ダウンロードボタンのイベントリスナーを設定
-        this.videos.forEach(video => {
+        // イベントリスナーを設定
+        this.filteredVideos.forEach(video => {
             const downloadBtn = document.getElementById(`download-${video.id}`);
             if (downloadBtn) {
                 downloadBtn.addEventListener('click', () => this.downloadVideo(video));
             }
+
+            const previewBtn = document.getElementById(`preview-${video.id}`);
+            if (previewBtn) {
+                previewBtn.addEventListener('click', () => this.previewVideo(video));
+            }
         });
+    }
+
+    private getFilterDisplayName(filter: string): string {
+        const filterNames: { [key: string]: string } = {
+            'video': '動画',
+            'source': 'ソース',
+            'iframe': '埋め込み'
+        };
+        return filterNames[filter] || filter;
     }
 
     private createVideoItem(video: VideoInfo): string {
@@ -165,7 +280,7 @@ class PopupManager {
         const resolution = video.width && video.height ? `${video.width}x${video.height}` : undefined;
         
         return `
-            <div class="video-item">
+            <div class="video-item" data-video-id="${video.id}">
                 <div class="video-content">
                     ${video.thumbnail ? `
                         <div class="video-thumbnail">
@@ -180,7 +295,7 @@ class PopupManager {
                         <div class="video-title">${this.escapeHtml(video.title)}</div>
                         <div class="video-info">
                             <div class="video-meta">
-                                <span class="video-type">${video.type}</span>
+                                <span class="video-type">${this.getFilterDisplayName(video.type)}</span>
                                 ${video.format ? `<span class="video-format">${video.format.toUpperCase()}</span>` : ''}
                                 ${video.quality ? `<span class="video-quality">${video.quality}</span>` : ''}
                             </div>
@@ -195,9 +310,15 @@ class PopupManager {
                     </div>
                 </div>
                 <div class="video-actions">
+                    <button id="preview-${video.id}" class="btn-preview">
+                        👁️ プレビュー
+                    </button>
                     <button id="download-${video.id}" class="btn-download">
                         ⬇️ ダウンロード
                     </button>
+                </div>
+                <div class="progress-bar" style="display: none;">
+                    <div class="progress-fill" style="width: 0%;"></div>
                 </div>
             </div>
         `;
