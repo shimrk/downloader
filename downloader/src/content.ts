@@ -62,6 +62,12 @@ class VideoDetector {
         
         if (!src) return;
 
+        // URLの有効性をチェック
+        if (!this.isValidVideoUrl(src)) {
+            console.log('Invalid video URL detected:', src);
+            return;
+        }
+
         const title = this.extractTitle(video);
         
         // 重複チェック（URLとタイトルの両方をチェック）
@@ -87,6 +93,8 @@ class VideoDetector {
             quality: this.extractQuality(video)
         };
 
+        console.log('Valid video detected:', videoInfo);
+
         // 一時的なマップに追加
         tempVideos.set(videoId, videoInfo);
         tempUrlToId.set(this.normalizeUrl(src), videoId);
@@ -111,6 +119,12 @@ class VideoDetector {
         
         if (!src) return;
 
+        // URLの有効性をチェック
+        if (!this.isValidVideoUrl(src)) {
+            console.log('Invalid source URL detected:', src);
+            return;
+        }
+
         // 重複チェック
         const normalizedUrl = this.normalizeUrl(src);
         if (tempUrlToId.has(normalizedUrl)) {
@@ -129,6 +143,8 @@ class VideoDetector {
             format: this.extractFormat(src),
             fileName: this.extractFileName(src)
         };
+
+        console.log('Valid source detected:', videoInfo);
 
         // 一時的なマップに追加
         tempVideos.set(sourceId, videoInfo);
@@ -499,6 +515,66 @@ class VideoDetector {
             .trim()
             .replace(/\s+/g, ' ') // 複数のスペースを1つに
             .replace(/[^\w\s]/g, ''); // 特殊文字を除去
+    }
+
+    private isValidVideoUrl(url: string): boolean {
+        try {
+            const urlObj = new URL(url);
+            
+            // データURLやblob URLは許可
+            if (urlObj.protocol === 'data:' || urlObj.protocol === 'blob:') {
+                return true;
+            }
+            
+            // HTTP/HTTPS URLのみ許可
+            if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+                return false;
+            }
+            
+            // ストリーミング動画のセグメントURLを除外
+            if (this.isStreamingSegmentUrl(urlObj)) {
+                return false;
+            }
+            
+            // 有効な動画拡張子を持つURLのみ許可
+            const pathname = urlObj.pathname.toLowerCase();
+            const validExtensions = ['.mp4', '.webm', '.ogg', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.m4v', '.3gp'];
+            const hasValidExtension = validExtensions.some(ext => pathname.endsWith(ext));
+            
+            // 拡張子がない場合は、クエリパラメータで動画ファイルかどうかを判断
+            if (!hasValidExtension) {
+                // ストリーミング動画のマニフェストファイルやプレイリストファイルを除外
+                if (pathname.includes('manifest') || pathname.includes('playlist') || pathname.includes('m3u8')) {
+                    return false;
+                }
+                
+                // セグメントファイルを除外
+                if (pathname.includes('segment') || pathname.includes('chunk') || pathname.includes('fragment')) {
+                    return false;
+                }
+            }
+            
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private isStreamingSegmentUrl(urlObj: URL): boolean {
+        const pathname = urlObj.pathname.toLowerCase();
+        
+        // セグメントファイルのパターン
+        const segmentPatterns = [
+            /\.ts$/, // HLSセグメント
+            /\.m4s$/, // DASHセグメント
+            /segment_\d+/, // セグメント番号
+            /chunk_\d+/, // チャンク番号
+            /fragment_\d+/, // フラグメント番号
+            /\d+\.ts$/, // 数字.ts
+            /\d+\.m4s$/ // 数字.m4s
+        ];
+        
+        return segmentPatterns.some(pattern => pattern.test(pathname));
     }
 }
 

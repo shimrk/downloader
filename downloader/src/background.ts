@@ -13,6 +13,7 @@ class VideoManager {
     private init(): void {
         this.setupMessageListeners();
         this.setupTabListeners();
+        this.setupDownloadListeners();
     }
 
     private setupMessageListeners(): void {
@@ -55,6 +56,86 @@ class VideoManager {
         });
     }
 
+    private setupDownloadListeners(): void {
+        // ダウンロード開始時のイベント
+        chrome.downloads.onCreated.addListener((downloadItem) => {
+            console.log('=== Download Created ===');
+            console.log('Download item:', {
+                id: downloadItem.id,
+                url: downloadItem.url,
+                filename: downloadItem.filename,
+                fileSize: downloadItem.fileSize,
+                state: downloadItem.state,
+                startTime: downloadItem.startTime
+            });
+        });
+
+        // ダウンロード状態変更時のイベント
+        chrome.downloads.onChanged.addListener((delta) => {
+            console.log('=== Download State Changed ===');
+            console.log('Delta:', delta);
+            
+            if (delta.state) {
+                const newState = delta.state.current;
+                const previousState = delta.state.previous;
+                console.log(`Download ${delta.id} state changed from ${previousState} to ${newState}`);
+                
+                if (newState === 'interrupted') {
+                    // ダウンロードが中断された場合
+                    chrome.downloads.search({ id: delta.id }, (downloads) => {
+                        if (downloads.length > 0) {
+                            const download = downloads[0];
+                            console.error('=== Download Interrupted ===');
+                            console.error('Download details:', {
+                                id: download.id,
+                                filename: download.filename,
+                                url: download.url,
+                                error: download.error,
+                                fileSize: download.fileSize,
+                                state: download.state
+                            });
+                        }
+                    });
+                } else if (newState === 'complete') {
+                    console.log(`=== Download Completed ===`);
+                    console.log(`Download ${delta.id} completed successfully`);
+                    
+                    // 完了したダウンロードの詳細を取得
+                    chrome.downloads.search({ id: delta.id }, (downloads) => {
+                        if (downloads.length > 0) {
+                            const download = downloads[0];
+                            console.log('Completed download details:', {
+                                id: download.id,
+                                filename: download.filename,
+                                url: download.url,
+                                fileSize: download.fileSize,
+                                endTime: download.endTime
+                            });
+                        }
+                    });
+                } else if (newState === 'in_progress') {
+                    console.log(`Download ${delta.id} is in progress`);
+                }
+            }
+            
+            // ファイルサイズの変更
+            if (delta.fileSize) {
+                console.log(`Download ${delta.id} file size: ${delta.fileSize.current} bytes`);
+            }
+            
+            // ファイル名の変更
+            if (delta.filename) {
+                console.log(`Download ${delta.id} filename changed to: ${delta.filename.current}`);
+            }
+        });
+
+        // ダウンロード削除時のイベント
+        chrome.downloads.onErased.addListener((downloadId) => {
+            console.log('=== Download Erased ===');
+            console.log('Download erased:', downloadId);
+        });
+    }
+
     private updateVideos(videos: VideoInfo[], tabId?: number): void {
         if (tabId && tabId === this.activeTabId) {
             videos.forEach(video => {
@@ -69,29 +150,99 @@ class VideoManager {
 
     private async downloadVideo(videoInfo: VideoInfo, sendResponse: (response: any) => void): Promise<void> {
         try {
+            console.log('=== Download Process Start ===');
+            console.log('Video info:', {
+                id: videoInfo.id,
+                url: videoInfo.url,
+                title: videoInfo.title,
+                type: videoInfo.type,
+                format: videoInfo.format,
+                fileName: videoInfo.fileName
+            });
+            
+            // URLの有効性をチェック
+            if (!this.isValidUrl(videoInfo.url)) {
+                console.error('Invalid URL detected:', videoInfo.url);
+                throw new Error('無効なURLです');
+            }
+
+            console.log('URL validation passed');
+
             // ファイル名を生成
             let fileName: string;
             try {
                 fileName = await this.generateFileName(videoInfo);
+                console.log('Generated filename:', fileName);
             } catch (error) {
                 console.warn('Failed to generate filename:', error);
                 // フォールバック: タイムスタンプベースのファイル名
                 const timestamp = new Date().getTime();
                 const extension = this.getFileExtension(videoInfo);
                 fileName = `video_${timestamp}.${extension}`;
+                console.log('Using fallback filename:', fileName);
             }
             
-            // ダウンロードを開始
-            const downloadId = await chrome.downloads.download({
+            // ダウンロードオプションを設定
+            const downloadOptions: chrome.downloads.DownloadOptions = {
                 url: videoInfo.url,
                 filename: fileName,
                 saveAs: true
-            });
+            };
+
+            console.log('Download options:', downloadOptions);
+            console.log('Starting download...');
+            
+            // ダウンロードを開始
+            const downloadId = await chrome.downloads.download(downloadOptions);
+            console.log('Download started with ID:', downloadId);
+            console.log('=== Download Process End ===');
 
             sendResponse({ success: true, downloadId });
         } catch (error) {
-            console.error('Download failed:', error);
-            sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+            console.error('=== Download Error ===');
+            console.error('Error details:', error);
+            console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+            
+            let errorMessage = 'ダウンロードに失敗しました';
+            
+            if (error instanceof Error) {
+                if (error.message.includes('NETWORK_FAILED')) {
+                    errorMessage = 'ネットワークエラーが発生しました。URLが有効かどうか確認してください。';
+                } else if (error.message.includes('SERVER_FAILED')) {
+                    errorMessage = 'サーバーエラーが発生しました。しばらく時間をおいて再試行してください。';
+                } else if (error.message.includes('ACCESS_DENIED')) {
+                    errorMessage = 'アクセスが拒否されました。CORS制限の可能性があります。';
+                } else if (error.message.includes('FILE_ACCESS_DENIED')) {
+                    errorMessage = 'ファイルアクセスが拒否されました。';
+                } else if (error.message.includes('FILE_NO_SPACE')) {
+                    errorMessage = 'ディスク容量が不足しています。';
+                } else if (error.message.includes('FILE_NAME_TOO_LONG')) {
+                    errorMessage = 'ファイル名が長すぎます。';
+                } else if (error.message.includes('FILE_TOO_LARGE')) {
+                    errorMessage = 'ファイルサイズが大きすぎます。';
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+            
+            console.error('Final error message:', errorMessage);
+            console.error('=== Download Error End ===');
+            
+            sendResponse({ success: false, error: errorMessage });
+        }
+    }
+
+    private isValidUrl(url: string): boolean {
+        try {
+            const urlObj = new URL(url);
+            // データURLやblob URLは許可
+            if (urlObj.protocol === 'data:' || urlObj.protocol === 'blob:') {
+                return true;
+            }
+            // HTTP/HTTPS URLのみ許可
+            return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+        } catch {
+            return false;
         }
     }
 
