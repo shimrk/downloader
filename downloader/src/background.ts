@@ -70,7 +70,16 @@ class VideoManager {
     private async downloadVideo(videoInfo: VideoInfo, sendResponse: (response: any) => void): Promise<void> {
         try {
             // ファイル名を生成
-            const fileName = this.generateFileName(videoInfo);
+            let fileName: string;
+            try {
+                fileName = await this.generateFileName(videoInfo);
+            } catch (error) {
+                console.warn('Failed to generate filename:', error);
+                // フォールバック: タイムスタンプベースのファイル名
+                const timestamp = new Date().getTime();
+                const extension = this.getFileExtension(videoInfo);
+                fileName = `video_${timestamp}.${extension}`;
+            }
             
             // ダウンロードを開始
             const downloadId = await chrome.downloads.download({
@@ -136,19 +145,163 @@ class VideoManager {
         }
     }
 
-    private generateFileName(videoInfo: VideoInfo): string {
+    private async generateFileName(videoInfo: VideoInfo): Promise<string> {
         // ファイル名を安全に生成
-        let fileName = videoInfo.title
-            .replace(/[<>:"/\\|?*]/g, '_') // 無効な文字を置換
-            .replace(/\s+/g, '_') // スペースをアンダースコアに
-            .substring(0, 100); // 長さを制限
-
-        // 拡張子を追加
-        const url = new URL(videoInfo.url);
-        const pathname = url.pathname;
-        const extension = pathname.includes('.') ? pathname.split('.').pop() : 'mp4';
+        let fileName = this.sanitizeFileName(videoInfo.title);
         
-        return `${fileName}.${extension}`;
+        // ファイル名が空の場合はデフォルト名を使用
+        if (!fileName.trim()) {
+            fileName = 'video';
+        }
+        
+        // 品質情報を追加
+        const qualityInfo = this.getQualityInfo(videoInfo);
+        if (qualityInfo) {
+            fileName = `${fileName}_${qualityInfo}`;
+        }
+        
+        // 長さを制限（拡張子を考慮して100文字以内）
+        if (fileName.length > 100) {
+            fileName = fileName.substring(0, 100);
+        }
+        
+        // 拡張子を取得
+        const extension = this.getFileExtension(videoInfo);
+        
+        // 最終的なファイル名を生成
+        const finalFileName = `${fileName}.${extension}`;
+        
+        // 重複を避けるため、必要に応じて番号を追加
+        return await this.ensureUniqueFileName(finalFileName);
+    }
+
+    private getQualityInfo(videoInfo: VideoInfo): string | null {
+        const parts: string[] = [];
+        
+        // 解像度情報
+        if (videoInfo.width && videoInfo.height) {
+            parts.push(`${videoInfo.width}x${videoInfo.height}`);
+        }
+        
+        // 品質情報
+        if (videoInfo.quality) {
+            parts.push(videoInfo.quality);
+        }
+        
+        // フォーマット情報
+        if (videoInfo.format) {
+            parts.push(videoInfo.format.toUpperCase());
+        }
+        
+        return parts.length > 0 ? parts.join('_') : null;
+    }
+
+    private sanitizeFileName(fileName: string): string {
+        return fileName
+            // 制御文字を削除
+            .replace(/[\x00-\x1f\x7f]/g, '')
+            // 無効なファイル名文字を置換
+            .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+            // 予約語を避ける（Windows）
+            .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/gi, '_$1$2')
+            // 先頭と末尾のドット、スペースを削除
+            .replace(/^[.\s]+|[.\s]+$/g, '')
+            // 連続するスペースやアンダースコアを単一に
+            .replace(/[\s_]+/g, '_')
+            // 連続するドットを単一に
+            .replace(/\.+/g, '.')
+            // 先頭のドットを削除
+            .replace(/^\./, '')
+            // 末尾のドットを削除
+            .replace(/\.$/, '')
+            // 絵文字を削除または置換
+            .replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '')
+            // その他の特殊文字を置換
+            .replace(/[^\w\s\-_\.]/g, '_')
+            // 空文字列の場合はデフォルト名
+            .replace(/^$/, 'video')
+            // 最終的な長さ制限（ファイルシステムの制限を考慮）
+            .substring(0, 200);
+    }
+
+    private getFileExtension(videoInfo: VideoInfo): string {
+        // 1. 動画情報から直接取得
+        if (videoInfo.format) {
+            return videoInfo.format.toLowerCase();
+        }
+        
+        // 2. URLから拡張子を抽出
+        try {
+            const url = new URL(videoInfo.url);
+            const pathname = url.pathname;
+            const extension = pathname.split('.').pop()?.toLowerCase();
+            
+            // 有効な動画拡張子かチェック
+            const validExtensions = ['mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp'];
+            if (extension && validExtensions.includes(extension)) {
+                return extension;
+            }
+        } catch (error) {
+            console.warn('URL parsing failed:', error);
+        }
+        
+        // 3. Content-Typeヘッダーから推測（実装可能な場合）
+        // 現在は実装していないため、デフォルト値を返す
+        
+        // 4. デフォルト拡張子
+        return 'mp4';
+    }
+
+    private async ensureUniqueFileName(fileName: string): Promise<string> {
+        try {
+            // Chromeのダウンロード履歴を検索
+            const downloads = await chrome.downloads.search({
+                filename: fileName
+            });
+            
+            // 同じファイル名が存在しない場合はそのまま返す
+            if (downloads.length === 0) {
+                return fileName;
+            }
+            
+            // 重複がある場合は番号を追加
+            const baseName = fileName.replace(/\.[^/.]+$/, ''); // 拡張子を除く
+            const extension = fileName.split('.').pop() || 'mp4';
+            
+            let counter = 1;
+            let newFileName = `${baseName}_${counter}.${extension}`;
+            
+            // 重複しなくなるまで番号を増やす
+            while (true) {
+                const existingDownloads = await chrome.downloads.search({
+                    filename: newFileName
+                });
+                
+                if (existingDownloads.length === 0) {
+                    break;
+                }
+                
+                counter++;
+                newFileName = `${baseName}_${counter}.${extension}`;
+                
+                // 無限ループを防ぐため、最大100回まで
+                if (counter > 100) {
+                    // タイムスタンプを使用
+                    const timestamp = new Date().getTime();
+                    newFileName = `${baseName}_${timestamp}.${extension}`;
+                    break;
+                }
+            }
+            
+            return newFileName;
+        } catch (error) {
+            console.warn('Failed to check download history:', error);
+            // エラーの場合はタイムスタンプを使用
+            const timestamp = new Date().getTime();
+            const baseName = fileName.replace(/\.[^/.]+$/, '');
+            const extension = fileName.split('.').pop() || 'mp4';
+            return `${baseName}_${timestamp}.${extension}`;
+        }
     }
 }
 
