@@ -6,14 +6,16 @@ class VideoDetector {
     private videos: Map<string, VideoInfo> = new Map();
     private urlToId: Map<string, string> = new Map(); // URLからIDへのマッピング
     private observer: MutationObserver | null = null;
+    private detectionInterval: number | null = null;
+    private isDestroyed = false;
 
     constructor() {
         this.init();
     }
 
-    private init(): void {
+    private async init(): Promise<void> {
         // 初期検出
-        this.detectVideos();
+        await this.detectVideos();
         
         // DOM変更の監視
         this.observeDOMChanges();
@@ -22,10 +24,28 @@ class VideoDetector {
         this.setupMessageListener();
         
         // 定期的な再検出（動的に追加される動画のため）
-        setInterval(() => this.detectVideos(), 5000);
+        this.detectionInterval = window.setInterval(async () => {
+            if (!this.isDestroyed) {
+                await this.detectVideos();
+            }
+        }, 5000);
+
+        // ページアンロード時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            this.destroy();
+        });
+
+        // ページ非表示時のクリーンアップ
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.pauseDetection();
+            } else {
+                this.resumeDetection();
+            }
+        });
     }
 
-    private detectVideos(): void {
+    private async detectVideos(): Promise<void> {
         const videoElements = document.querySelectorAll('video');
         const sourceElements = document.querySelectorAll('source[src*=".mp4"], source[src*=".webm"], source[src*=".ogg"]');
         const iframeElements = document.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], iframe[src*="dailymotion"]');
@@ -35,19 +55,19 @@ class VideoDetector {
         const tempUrlToId = new Map<string, string>();
         
         // video要素の検出
-        videoElements.forEach((video, index) => {
-            this.processVideoElement(video, index, tempVideos, tempUrlToId);
-        });
+        for (let i = 0; i < videoElements.length; i++) {
+            await this.processVideoElement(videoElements[i], i, tempVideos, tempUrlToId);
+        }
 
         // source要素の検出
-        sourceElements.forEach((source, index) => {
-            this.processSourceElement(source as HTMLSourceElement, index, tempVideos, tempUrlToId);
-        });
+        for (let i = 0; i < sourceElements.length; i++) {
+            await this.processSourceElement(sourceElements[i] as HTMLSourceElement, i, tempVideos, tempUrlToId);
+        }
 
         // iframe要素の検出（埋め込み動画）
-        iframeElements.forEach((iframe, index) => {
-            this.processIframeElement(iframe as HTMLIFrameElement, index, tempVideos, tempUrlToId);
-        });
+        for (let i = 0; i < iframeElements.length; i++) {
+            await this.processIframeElement(iframeElements[i] as HTMLIFrameElement, i, tempVideos, tempUrlToId);
+        }
 
         // 結果を更新
         this.videos = tempVideos;
@@ -55,9 +75,11 @@ class VideoDetector {
         
         // 検出結果をバックグラウンドに送信
         this.sendVideosToBackground();
+        
+        console.log(`Video detection completed. Found ${tempVideos.size} unique videos.`);
     }
 
-    private processVideoElement(video: HTMLVideoElement, index: number, tempVideos: Map<string, VideoInfo>, tempUrlToId: Map<string, string>): void {
+    private async processVideoElement(video: HTMLVideoElement, index: number, tempVideos: Map<string, VideoInfo>, tempUrlToId: Map<string, string>): Promise<void> {
         const src = video.src || video.currentSrc;
         
         if (!src) return;
@@ -70,12 +92,7 @@ class VideoDetector {
 
         const title = this.extractTitle(video);
         
-        // 重複チェック（URLとタイトルの両方をチェック）
-        if (this.isDuplicateVideo(src, title, tempUrlToId, tempVideos)) {
-            console.log('Duplicate video detected:', title);
-            return;
-        }
-
+        // 動画情報を作成
         const videoId = `video_${index}_${Date.now()}`;
         const videoInfo: VideoInfo = {
             id: videoId,
@@ -92,6 +109,13 @@ class VideoDetector {
             fileName: this.extractFileName(src),
             quality: this.extractQuality(video)
         };
+
+        // 高度な重複チェック
+        const isDuplicate = await this.isDuplicateVideoAdvanced(videoInfo, tempVideos);
+        if (isDuplicate) {
+            console.log('Duplicate video detected, skipping:', videoInfo.title);
+            return;
+        }
 
         console.log('Valid video detected:', videoInfo);
 
@@ -114,7 +138,7 @@ class VideoDetector {
         });
     }
 
-    private processSourceElement(source: HTMLSourceElement, index: number, tempVideos: Map<string, VideoInfo>, tempUrlToId: Map<string, string>): void {
+    private async processSourceElement(source: HTMLSourceElement, index: number, tempVideos: Map<string, VideoInfo>, tempUrlToId: Map<string, string>): Promise<void> {
         const src = source.src;
         
         if (!src) return;
@@ -122,13 +146,6 @@ class VideoDetector {
         // URLの有効性をチェック
         if (!this.isValidVideoUrl(src)) {
             console.log('Invalid source URL detected:', src);
-            return;
-        }
-
-        // 重複チェック
-        const normalizedUrl = this.normalizeUrl(src);
-        if (tempUrlToId.has(normalizedUrl)) {
-            console.log('Duplicate source URL detected:', normalizedUrl);
             return;
         }
 
@@ -144,23 +161,30 @@ class VideoDetector {
             fileName: this.extractFileName(src)
         };
 
+        // 高度な重複チェック
+        const isDuplicate = await this.isDuplicateVideoAdvanced(videoInfo, tempVideos);
+        if (isDuplicate) {
+            console.log('Duplicate source detected, skipping:', videoInfo.title);
+            return;
+        }
+
         console.log('Valid source detected:', videoInfo);
 
         // 一時的なマップに追加
         tempVideos.set(sourceId, videoInfo);
-        tempUrlToId.set(normalizedUrl, sourceId);
+        tempUrlToId.set(this.normalizeUrl(src), sourceId);
 
         // ファイルサイズを非同期で取得
         this.getFileSize(src).then(fileSize => {
             videoInfo.fileSize = fileSize;
             // 最終的なマップに更新
             this.videos.set(sourceId, videoInfo);
-            this.urlToId.set(normalizedUrl, sourceId);
+            this.urlToId.set(this.normalizeUrl(src), sourceId);
             this.sendVideosToBackground();
         }).catch(() => {
             // 最終的なマップに更新
             this.videos.set(sourceId, videoInfo);
-            this.urlToId.set(normalizedUrl, sourceId);
+            this.urlToId.set(this.normalizeUrl(src), sourceId);
             this.sendVideosToBackground();
         });
     }
@@ -304,6 +328,48 @@ class VideoDetector {
             action: 'updateVideos',
             videos: videos
         });
+    }
+
+    // クリーンアップ関連のメソッド
+    private destroy(): void {
+        if (this.isDestroyed) return;
+        
+        this.isDestroyed = true;
+        
+        // MutationObserverのクリーンアップ
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+        
+        // 定期的な検出のクリーンアップ
+        if (this.detectionInterval) {
+            clearInterval(this.detectionInterval);
+            this.detectionInterval = null;
+        }
+        
+        // データのクリア
+        this.videos.clear();
+        this.urlToId.clear();
+        
+        console.log('VideoDetector destroyed and cleaned up');
+    }
+
+    private pauseDetection(): void {
+        if (this.detectionInterval) {
+            clearInterval(this.detectionInterval);
+            this.detectionInterval = null;
+        }
+    }
+
+    private resumeDetection(): void {
+        if (!this.detectionInterval && !this.isDestroyed) {
+            this.detectionInterval = window.setInterval(async () => {
+                if (!this.isDestroyed) {
+                    await this.detectVideos();
+                }
+            }, 5000);
+        }
     }
 
     // 新しく追加するヘルパーメソッド
@@ -486,35 +552,21 @@ class VideoDetector {
         return segmentPatterns.some(pattern => pattern.test(text));
     }
 
-    // タイトルベースの重複チェックも追加
-    private isDuplicateVideo(url: string, title: string, tempUrlToId: Map<string, string>, tempVideos: Map<string, VideoInfo>): boolean {
-        const normalizedUrl = this.normalizeUrl(url);
+    private isStreamingSegmentUrl(urlObj: URL): boolean {
+        const pathname = urlObj.pathname.toLowerCase();
         
-        // URLベースの重複チェック
-        if (tempUrlToId.has(normalizedUrl)) {
-            return true;
-        }
+        // セグメントファイルのパターン
+        const segmentPatterns = [
+            /\.ts$/, // HLSセグメント
+            /\.m4s$/, // DASHセグメント
+            /segment_\d+/, // セグメント番号
+            /chunk_\d+/, // チャンク番号
+            /fragment_\d+/, // フラグメント番号
+            /\d+\.ts$/, // 数字.ts
+            /\d+\.m4s$/ // 数字.m4s
+        ];
         
-        // タイトルベースの重複チェック（同じタイトルで異なるURLの場合）
-        const normalizedTitle = this.normalizeTitle(title);
-        for (const video of tempVideos.values()) {
-            const videoNormalizedTitle = this.normalizeTitle(video.title);
-            if (videoNormalizedTitle === normalizedTitle && video.type === 'video') {
-                console.log('Duplicate video title detected:', normalizedTitle);
-                return true;
-            }
-        }
-        
-        return false;
-    }
-
-    // タイトルを正規化
-    private normalizeTitle(title: string): string {
-        return title
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, ' ') // 複数のスペースを1つに
-            .replace(/[^\w\s]/g, ''); // 特殊文字を除去
+        return segmentPatterns.some(pattern => pattern.test(pathname));
     }
 
     private isValidVideoUrl(url: string): boolean {
@@ -560,21 +612,342 @@ class VideoDetector {
         }
     }
 
-    private isStreamingSegmentUrl(urlObj: URL): boolean {
-        const pathname = urlObj.pathname.toLowerCase();
+    // タイトルを正規化
+    private normalizeTitle(title: string): string {
+        return title
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, ' ') // 複数のスペースを1つに
+            .replace(/[^\w\s]/g, ''); // 特殊文字を除去
+    }
+
+    private async isDuplicateVideoAdvanced(videoInfo: VideoInfo, tempVideos: Map<string, VideoInfo>): Promise<boolean> {
+        const normalizedUrl = this.normalizeUrl(videoInfo.url);
+        const normalizedTitle = this.normalizeTitle(videoInfo.title);
         
-        // セグメントファイルのパターン
-        const segmentPatterns = [
-            /\.ts$/, // HLSセグメント
-            /\.m4s$/, // DASHセグメント
-            /segment_\d+/, // セグメント番号
-            /chunk_\d+/, // チャンク番号
-            /fragment_\d+/, // フラグメント番号
-            /\d+\.ts$/, // 数字.ts
-            /\d+\.m4s$/ // 数字.m4s
+        // 1. ハッシュライクパターンの重複チェック（最優先）
+        if (videoInfo.fileName && this.hasHashLikePatternDuplicate(videoInfo.fileName, tempVideos)) {
+            console.log('Duplicate detected by hash-like pattern:', videoInfo.fileName);
+            return true;
+        }
+        
+        // 2. URLベースの重複チェック
+        if (this.hasUrlDuplicate(normalizedUrl, tempVideos)) {
+            console.log('Duplicate detected by URL:', normalizedUrl);
+            return true;
+        }
+        
+        // 3. タイトルベースの重複チェック
+        if (this.hasTitleDuplicate(normalizedTitle, videoInfo.type, tempVideos)) {
+            console.log('Duplicate detected by title:', normalizedTitle);
+            return true;
+        }
+        
+        // 4. ファイル名ベースの重複チェック
+        if (videoInfo.fileName && this.hasFileNameDuplicate(videoInfo.fileName, tempVideos)) {
+            console.log('Duplicate detected by filename:', videoInfo.fileName);
+            return true;
+        }
+        
+        // 5. ファイルサイズベースの重複チェック（同じサイズで同じタイトルの場合）
+        if (videoInfo.fileSize && this.hasFileSizeDuplicate(videoInfo.fileSize, normalizedTitle, tempVideos)) {
+            console.log('Duplicate detected by file size and title:', videoInfo.fileSize, normalizedTitle);
+            return true;
+        }
+        
+        // 6. 解像度ベースの重複チェック（同じ解像度で同じタイトルの場合）
+        if (videoInfo.width && videoInfo.height && this.hasResolutionDuplicate(videoInfo.width, videoInfo.height, normalizedTitle, tempVideos)) {
+            console.log('Duplicate detected by resolution and title:', `${videoInfo.width}x${videoInfo.height}`, normalizedTitle);
+            return true;
+        }
+        
+        // 7. ハッシュ値ベースの重複チェック（URLからハッシュを抽出）
+        const urlHash = this.extractUrlHash(videoInfo.url);
+        if (urlHash && this.hasHashDuplicate(urlHash, tempVideos)) {
+            console.log('Duplicate detected by URL hash:', urlHash);
+            return true;
+        }
+        
+        // 8. 動画IDベースの重複チェック（埋め込み動画の場合）
+        if (videoInfo.type === 'iframe') {
+            const videoId = this.extractVideoId(videoInfo.url);
+            if (videoId && this.hasVideoIdDuplicate(videoId, tempVideos)) {
+                console.log('Duplicate detected by video ID:', videoId);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    private hasHashLikePatternDuplicate(fileName: string, tempVideos: Map<string, VideoInfo>): boolean {
+        const normalizedFileName = this.normalizeFileName(fileName);
+        
+        // ハッシュライクパターンでない場合は重複とみなさない
+        if (!this.isHashLikePattern(normalizedFileName)) {
+            return false;
+        }
+        
+        // 既存の動画でハッシュライクパターンを持つものをチェック
+        for (const video of tempVideos.values()) {
+            if (video.fileName) {
+                const videoNormalizedFileName = this.normalizeFileName(video.fileName);
+                
+                // 同じハッシュライクパターンを持つ場合は重複
+                if (this.isHashLikePattern(videoNormalizedFileName)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    private hasUrlDuplicate(normalizedUrl: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            if (this.normalizeUrl(video.url) === normalizedUrl) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hasTitleDuplicate(normalizedTitle: string, type: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            if (video.type === type && this.normalizeTitle(video.title) === normalizedTitle) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hasFileSizeDuplicate(fileSize: number, normalizedTitle: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            if (video.fileSize && 
+                Math.abs(video.fileSize - fileSize) < 1024 && // 1KB以内の差は同じファイルとみなす
+                this.normalizeTitle(video.title) === normalizedTitle) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hasResolutionDuplicate(width: number, height: number, normalizedTitle: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            if (video.width === width && 
+                video.height === height && 
+                this.normalizeTitle(video.title) === normalizedTitle) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hasHashDuplicate(hash: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            const videoHash = this.extractUrlHash(video.url);
+            if (videoHash === hash) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private hasVideoIdDuplicate(videoId: string, tempVideos: Map<string, VideoInfo>): boolean {
+        for (const video of tempVideos.values()) {
+            if (video.type === 'iframe') {
+                const existingVideoId = this.extractVideoId(video.url);
+                if (existingVideoId === videoId) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private extractUrlHash(url: string): string | null {
+        try {
+            const urlObj = new URL(url);
+            
+            // クエリパラメータからハッシュを探す
+            const hashParams = ['hash', 'md5', 'sha1', 'sha256', 'id', 'token'];
+            for (const param of hashParams) {
+                const value = urlObj.searchParams.get(param);
+                if (value && this.isHashValue(value)) {
+                    return value;
+                }
+            }
+            
+            // パスからハッシュを探す
+            const pathSegments = urlObj.pathname.split('/');
+            for (const segment of pathSegments) {
+                if (this.isHashValue(segment)) {
+                    return segment;
+                }
+            }
+            
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    private isHashValue(value: string): boolean {
+        // ハッシュ値のパターンをチェック
+        const hashPatterns = [
+            /^[a-f0-9]{32}$/i, // MD5
+            /^[a-f0-9]{40}$/i, // SHA1
+            /^[a-f0-9]{64}$/i, // SHA256
+            /^[a-f0-9]{8,}$/i, // その他のハッシュ
         ];
         
-        return segmentPatterns.some(pattern => pattern.test(pathname));
+        return hashPatterns.some(pattern => pattern.test(value));
+    }
+
+    private extractVideoId(url: string): string | null {
+        // YouTube
+        const youtubeId = this.extractYouTubeVideoId(url);
+        if (youtubeId) return youtubeId;
+        
+        // Vimeo
+        const vimeoId = this.extractVimeoVideoId(url);
+        if (vimeoId) return vimeoId;
+        
+        // Dailymotion
+        const dailymotionId = this.extractDailymotionVideoId(url);
+        if (dailymotionId) return dailymotionId;
+        
+        return null;
+    }
+
+    private hasFileNameDuplicate(fileName: string, tempVideos: Map<string, VideoInfo>): boolean {
+        const normalizedFileName = this.normalizeFileName(fileName);
+        
+        for (const video of tempVideos.values()) {
+            if (video.fileName) {
+                const videoNormalizedFileName = this.normalizeFileName(video.fileName);
+                
+                // 完全一致
+                if (videoNormalizedFileName === normalizedFileName) {
+                    return true;
+                }
+                
+                // 類似性チェック（類似度が高い場合は重複とみなす）
+                if (this.isSimilarFileName(normalizedFileName, videoNormalizedFileName)) {
+                    return true;
+                }
+                
+                // UUID/ハッシュパターンの重複チェック
+                if (this.isHashLikePattern(normalizedFileName) && this.isHashLikePattern(videoNormalizedFileName)) {
+                    console.log('Duplicate detected by hash-like pattern:', normalizedFileName, videoNormalizedFileName);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private normalizeFileName(fileName: string): string {
+        return fileName
+            .toLowerCase()
+            .trim()
+            .replace(/[^\w\s\-_\.]/g, '') // 特殊文字を除去
+            .replace(/\s+/g, '_') // スペースをアンダースコアに
+            .replace(/\.(mp4|webm|ogg|avi|mov|wmv|flv|mkv|m4v|3gp)$/i, ''); // 拡張子を除去
+    }
+
+    private isSimilarFileName(fileName1: string, fileName2: string): boolean {
+        // 1. 完全一致
+        if (fileName1 === fileName2) {
+            return true;
+        }
+        
+        // 2. 長さが大きく異なる場合は類似しない
+        const lengthDiff = Math.abs(fileName1.length - fileName2.length);
+        const maxLength = Math.max(fileName1.length, fileName2.length);
+        if (lengthDiff / maxLength > 0.3) { // 30%以上の長さ差は類似しない
+            return false;
+        }
+        
+        // 3. 共通部分の割合を計算
+        const commonChars = this.getCommonCharacters(fileName1, fileName2);
+        const similarity = commonChars / Math.max(fileName1.length, fileName2.length);
+        
+        // 4. 類似度が80%以上の場合、重複とみなす
+        return similarity >= 0.8;
+    }
+
+    private isHashLikePattern(fileName: string): boolean {
+        // UUIDパターン (例: 60acff2e-c00a-4acc-bc6d-d0c303a2a85a)
+        const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+        if (uuidPattern.test(fileName)) {
+            return true;
+        }
+        
+        // ハッシュ値パターン (32文字、40文字、64文字の16進数)
+        const hashPatterns = [
+            /^[a-f0-9]{32}$/i, // MD5
+            /^[a-f0-9]{40}$/i, // SHA1
+            /^[a-f0-9]{64}$/i, // SHA256
+        ];
+        if (hashPatterns.some(pattern => pattern.test(fileName))) {
+            return true;
+        }
+        
+        // 短いハッシュ値パターン (8文字以上の16進数)
+        const shortHashPattern = /^[a-f0-9]{8,}$/i;
+        if (shortHashPattern.test(fileName) && fileName.length >= 8) {
+            return true;
+        }
+        
+        // 数字のみのパターン (タイムスタンプなど)
+        const numericPattern = /^\d+$/;
+        if (numericPattern.test(fileName) && fileName.length >= 8) {
+            return true;
+        }
+        
+        // ランダム文字列パターン (英数字の組み合わせで一定の長さ)
+        const randomPattern = /^[a-z0-9]{8,}$/i;
+        if (randomPattern.test(fileName) && fileName.length >= 8) {
+            // 文字の多様性をチェック（同じ文字が多すぎる場合は除外）
+            const charCount = new Map<string, number>();
+            for (const char of fileName) {
+                charCount.set(char, (charCount.get(char) || 0) + 1);
+            }
+            const maxCharCount = Math.max(...charCount.values());
+            const diversity = charCount.size / fileName.length;
+            
+            // 文字の多様性が低い場合はランダム文字列とみなさない
+            if (diversity < 0.3 || maxCharCount / fileName.length > 0.5) {
+                return false;
+            }
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    private getCommonCharacters(str1: string, str2: string): number {
+        const charCount1 = new Map<string, number>();
+        const charCount2 = new Map<string, number>();
+        
+        // 文字の出現回数をカウント
+        for (const char of str1) {
+            charCount1.set(char, (charCount1.get(char) || 0) + 1);
+        }
+        for (const char of str2) {
+            charCount2.set(char, (charCount2.get(char) || 0) + 1);
+        }
+        
+        // 共通文字の数を計算
+        let commonCount = 0;
+        for (const [char, count1] of charCount1) {
+            const count2 = charCount2.get(char) || 0;
+            commonCount += Math.min(count1, count2);
+        }
+        
+        return commonCount;
     }
 }
 

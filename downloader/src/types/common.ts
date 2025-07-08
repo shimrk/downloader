@@ -76,4 +76,7 @@ export interface StorageData {
         downloadPath: string;
         fileFormat: string;
     };
-} 
+}
+
+// エラー関連の型を再エクスポート
+export * from './errors'; 

@@ -8,6 +8,8 @@ class PopupManager {
     private isRefreshing = false;
     private currentFilter = 'all';
     private downloadingVideos = new Set<string>();
+    private eventListeners: Array<{ element: Element; event: string; handler: EventListener }> = [];
+    private isDestroyed = false;
 
     constructor() {
         this.init();
@@ -22,23 +24,34 @@ class PopupManager {
         // リフレッシュボタン
         const refreshBtn = document.getElementById('refreshBtn');
         if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => this.refreshVideos());
+            const refreshHandler = () => this.refreshVideos();
+            refreshBtn.addEventListener('click', refreshHandler);
+            this.eventListeners.push({ element: refreshBtn, event: 'click', handler: refreshHandler });
         }
 
         // クリアボタン
         const clearBtn = document.getElementById('clearBtn');
         if (clearBtn) {
-            clearBtn.addEventListener('click', () => this.clearVideos());
+            const clearHandler = () => this.clearVideos();
+            clearBtn.addEventListener('click', clearHandler);
+            this.eventListeners.push({ element: clearBtn, event: 'click', handler: clearHandler });
         }
 
         // フィルターボタン
         const filterBtns = document.querySelectorAll('.filter-btn');
         filterBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            const filterHandler = (e: Event) => {
                 const target = e.target as HTMLElement;
                 const filter = target.dataset.filter || 'all';
                 this.setFilter(filter);
-            });
+            };
+            btn.addEventListener('click', filterHandler);
+            this.eventListeners.push({ element: btn, event: 'click', handler: filterHandler });
+        });
+
+        // ポップアップが閉じられたときのクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            this.destroy();
         });
     }
 
@@ -396,60 +409,28 @@ class PopupManager {
     }
 
     private showDuplicateInfo(): void {
-        // 重複動画の数をカウント
-        const urlCounts = new Map<string, number>();
-        const titleCounts = new Map<string, number>();
+        // 重複排除の通知は削除（ユーザーに通知しない）
+        // 重複は自動的に除外されるが、通知は表示しない
+    }
+
+    // クリーンアップメソッド
+    private destroy(): void {
+        if (this.isDestroyed) return;
         
-        this.videos.forEach(video => {
-            // URLベースの重複チェック
-            const normalizedUrl = this.normalizeUrl(video.url);
-            urlCounts.set(normalizedUrl, (urlCounts.get(normalizedUrl) || 0) + 1);
-            
-            // タイトルベースの重複チェック
-            const normalizedTitle = this.normalizeTitle(video.title);
-            titleCounts.set(normalizedTitle, (titleCounts.get(normalizedTitle) || 0) + 1);
+        this.isDestroyed = true;
+        
+        // イベントリスナーのクリーンアップ
+        this.eventListeners.forEach(({ element, event, handler }) => {
+            element.removeEventListener(event, handler);
         });
+        this.eventListeners = [];
         
-        const duplicateUrls = Array.from(urlCounts.entries()).filter(([_, count]) => count > 1).length;
-        const duplicateTitles = Array.from(titleCounts.entries()).filter(([_, count]) => count > 1).length;
+        // データのクリア
+        this.videos = [];
+        this.filteredVideos = [];
+        this.downloadingVideos.clear();
         
-        if (duplicateUrls > 0 || duplicateTitles > 0) {
-            const status = document.getElementById('status');
-            if (status) {
-                status.innerHTML = `
-                    <div style="font-size: 12px; color: #856404;">
-                        🔍 重複検出: ${duplicateUrls}個の重複URL、${duplicateTitles}個の重複タイトルを除外しました
-                    </div>
-                `;
-                status.className = 'status loading';
-                status.style.display = 'block';
-                
-                // 3秒後に非表示
-                setTimeout(() => {
-                    status.style.display = 'none';
-                }, 3000);
-            }
-        }
-    }
-
-    // URLを正規化（content.tsと同じロジック）
-    private normalizeUrl(url: string): string {
-        try {
-            const urlObj = new URL(url);
-            const baseUrl = `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
-            return baseUrl;
-        } catch {
-            return url;
-        }
-    }
-
-    // タイトルを正規化（content.tsと同じロジック）
-    private normalizeTitle(title: string): string {
-        return title
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, ' ')
-            .replace(/[^\w\s]/g, '');
+        console.log('PopupManager destroyed and cleaned up');
     }
 }
 

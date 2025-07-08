@@ -1,0 +1,16 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["chrome", "vitest/globals", "jsdom"]
+    },
+    "include": [
+        "src/**/*",
+        "src/test/**/*",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+} 

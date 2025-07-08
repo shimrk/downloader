@@ -5,6 +5,7 @@ import { VideoInfo, Message, UpdateVideosMessage, DownloadVideoMessage } from '.
 class VideoManager {
     private videos: Map<string, VideoInfo> = new Map();
     private activeTabId: number | null = null;
+    private isDestroyed = false;
 
     constructor() {
         this.init();
@@ -43,6 +44,8 @@ class VideoManager {
     private setupTabListeners(): void {
         // タブが更新されたときの処理
         chrome.tabs.onUpdated.addListener((tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+            if (this.isDestroyed) return;
+            
             if (changeInfo.status === 'complete' && tab.url) {
                 this.activeTabId = tabId;
                 // 新しいページが読み込まれたら動画リストをクリア
@@ -52,7 +55,18 @@ class VideoManager {
 
         // タブがアクティブになったときの処理
         chrome.tabs.onActivated.addListener((activeInfo: chrome.tabs.TabActiveInfo) => {
+            if (this.isDestroyed) return;
             this.activeTabId = activeInfo.tabId;
+        });
+
+        // タブが閉じられたときの処理
+        chrome.tabs.onRemoved.addListener((tabId: number) => {
+            if (this.isDestroyed) return;
+            
+            if (tabId === this.activeTabId) {
+                this.activeTabId = null;
+                this.videos.clear();
+            }
         });
     }
 
@@ -137,11 +151,26 @@ class VideoManager {
     }
 
     private updateVideos(videos: VideoInfo[], tabId?: number): void {
+        if (this.isDestroyed) return;
+        
         if (tabId && tabId === this.activeTabId) {
             videos.forEach(video => {
                 this.videos.set(video.id, video);
             });
         }
+    }
+
+    // クリーンアップメソッド
+    public destroy(): void {
+        if (this.isDestroyed) return;
+        
+        this.isDestroyed = true;
+        
+        // データのクリア
+        this.videos.clear();
+        this.activeTabId = null;
+        
+        console.log('VideoManager destroyed and cleaned up');
     }
 
     private getVideos(sendResponse: (response: any) => void): void {
