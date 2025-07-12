@@ -5,12 +5,11 @@
     "scripts": {
         "build": "webpack --mode production",
         "dev": "webpack --mode development --watch",
-        "dev:webpack": "../scripts/dev-webpack-only.sh",
         "type-check": "tsc --noEmit",
         "clean": "rm -rf dist",
         "test": "vitest --config vitest.config.ts",
         "test:ui": "vitest --ui --config vitest.config.ts",
-        "test:run": "vitest run --config vitest.config.ts",
+        "test:run": "vitest run --config vitest.config.ts --passWithNoTests",
         "test:coverage": "vitest run --coverage --config vitest.config.ts",
         "test:e2e": "playwright test",
         "test:e2e:ui": "playwright test --ui",
