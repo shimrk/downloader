@@ -166,7 +166,25 @@ class VideoDetector {
             // 検出結果をバックグラウンドに送信（デバウンス付き）
             this.debouncer.debounce(() => {
                 console.log(`📤 Sending ${this.videos.size} videos to background`);
-                this.messageHandler.sendVideosToBackground(Array.from(this.videos.values()));
+                try {
+                    // 拡張機能コンテキストが有効かチェック
+                    if (!chrome.runtime?.id) {
+                        console.log('Extension context invalidated, skipping video update');
+                        return;
+                    }
+                    
+                    console.log('Sending videos to background:', Array.from(this.videos.values()));
+                    this.messageHandler.sendVideosToBackground(Array.from(this.videos.values()));
+                    console.log('Videos sent to background successfully');
+                } catch (error) {
+                    // 拡張機能コンテキスト無効化エラーの場合は静かに処理
+                    if ((error as any).message?.includes('Extension context invalidated') || 
+                        (error as any).message?.includes('Could not establish connection')) {
+                        console.log('Extension context invalidated, skipping video update');
+                    } else {
+                        console.error('Failed to send videos to background:', error);
+                    }
+                }
             }, 1000);
         });
         
@@ -227,4 +245,32 @@ class VideoDetector {
 }
 
 // コンテンツスクリプトの初期化
-new VideoDetector(); 
+let videoDetector: VideoDetector | null = null;
+
+function initializeVideoDetector(): void {
+    try {
+        // 拡張機能コンテキストが有効かチェック
+        if (!chrome.runtime?.id) {
+            console.warn('Extension context invalidated, cannot initialize VideoDetector');
+            return;
+        }
+        
+        if (!videoDetector) {
+            console.log('Initializing VideoDetector...');
+            videoDetector = new VideoDetector();
+        }
+    } catch (error) {
+        console.error('Failed to initialize VideoDetector:', error);
+    }
+}
+
+// 即座に初期化を試行
+initializeVideoDetector();
+
+// ページ読み込み完了後に再初期化を試行
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeVideoDetector);
+} else {
+    // 既に読み込み完了している場合は少し遅延して初期化
+    setTimeout(initializeVideoDetector, 100);
+} 

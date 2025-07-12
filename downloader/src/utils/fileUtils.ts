@@ -9,13 +9,37 @@
  */
 export async function getFileSize(url: string): Promise<number | undefined> {
     try {
-        const response = await fetch(url, { method: 'HEAD' });
+        // まず通常のHEADリクエストを試行
+        const response = await fetch(url, { 
+            method: 'HEAD',
+            mode: 'cors'
+        });
+        
         if (response.ok) {
             const contentLength = response.headers.get('content-length');
             return contentLength ? parseInt(contentLength, 10) : undefined;
         }
     } catch (error) {
-        console.error('File size fetch failed:', error);
+        // CORSエラーの場合はno-corsモードで再試行
+        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+            try {
+                console.log('File size fetch: CORS error, trying no-cors mode');
+                const response = await fetch(url, { 
+                    method: 'HEAD',
+                    mode: 'no-cors'
+                });
+                
+                // no-corsモードでは詳細な情報が取得できないため、undefinedを返す
+                if (response.type === 'opaque') {
+                    console.log('File size fetch: CORS restricted, size unavailable');
+                    return undefined;
+                }
+            } catch (noCorsError) {
+                console.log('File size fetch: Both CORS and no-cors failed, skipping size check');
+            }
+        } else {
+            console.error('File size fetch failed:', error);
+        }
     }
     return undefined;
 }

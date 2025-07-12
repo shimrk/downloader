@@ -83,6 +83,13 @@ class PopupManager {
 
     private async loadVideos(): Promise<void> {
         try {
+            // 拡張機能コンテキストが有効かチェック
+            if (!chrome.runtime?.id) {
+                console.warn('Extension context invalidated, cannot load videos');
+                this.showStatus('拡張機能が無効化されています。ページを再読み込みしてください。', 'error');
+                return;
+            }
+
             // バックグラウンドから動画リストを取得
             const response = await this.sendMessage({ action: 'getVideos' });
             if (response.videos) {
@@ -94,66 +101,70 @@ class PopupManager {
                 this.showDuplicateInfo();
             }
         } catch (error) {
-            console.error('Failed to load videos:', error);
-            this.showStatus('動画の読み込みに失敗しました', 'error');
+            // 拡張機能コンテキスト無効化エラーの場合は適切なメッセージを表示
+            if ((error as any).message?.includes('Extension context invalidated') || 
+                (error as any).message?.includes('Could not establish connection')) {
+                console.log('Extension context invalidated, cannot load videos');
+                this.showStatus('拡張機能が無効化されています。ページを再読み込みしてください。', 'error');
+            } else {
+                console.error('Failed to load videos:', error);
+                this.showStatus('動画の読み込みに失敗しました', 'error');
+            }
         }
     }
 
-    private async refreshVideos(): Promise<void> {
+    /**
+     * 動画を再検索
+     */
+    async refreshVideos(): Promise<void> {
         if (this.isRefreshing) return;
 
         this.isRefreshing = true;
         this.setRefreshButtonState(true);
-
+        
         try {
+            this.showStatus('動画を再検索中...', 'loading');
+            
             // アクティブなタブを取得
             const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            console.log('Found tabs:', tabs);
-            
             if (tabs.length === 0) {
-                throw new Error('アクティブなタブが見つかりません');
+                this.showStatus('アクティブなタブが見つかりません', 'error');
+                return;
             }
             
-            const tab = tabs[0];
-            console.log('Active tab:', tab);
+            const tabId = tabs[0].id;
+            if (!tabId) {
+                this.showStatus('タブIDが取得できません', 'error');
+                return;
+            }
             
-            if (!tab.id) {
-                throw new Error('タブIDが取得できません');
-            }
-
-            // タブのURLをチェック
-            if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-                throw new Error('このページでは動画検索ができません。通常のWebページでお試しください。');
-            }
-
-            // バックグラウンドにリフレッシュを要求
-            const response = await this.sendMessage({ 
+            // バックグラウンドにリフレッシュリクエストを送信
+            const response = await chrome.runtime.sendMessage({
                 action: 'refreshVideos',
-                tabId: tab.id 
+                tabId: tabId
             });
-
-            console.log('Refresh response:', response);
-
-            if (response.success) {
-                this.showStatus('動画を検索中...', 'loading');
-                
-                // 少し待ってから動画リストを再読み込み
+            
+            if (response?.success) {
+                this.showStatus('動画の再検索が完了しました', 'success');
+                // 少し待ってから動画リストを更新
                 setTimeout(() => {
                     this.loadVideos();
-                    this.showStatus('動画の検索が完了しました', 'success');
-                }, 2000);
+                }, 1000);
             } else {
-                throw new Error(response.error || '動画の検索に失敗しました');
+                const errorMessage = response?.error || '動画の再検索に失敗しました';
+                this.showStatus(errorMessage, 'error');
             }
         } catch (error) {
             console.error('Failed to refresh videos:', error);
-            let errorMessage = '動画の検索に失敗しました';
             
-            if (error instanceof Error) {
-                errorMessage = error.message;
+            // 拡張機能コンテキスト無効化エラーの場合は適切なメッセージを表示
+            if ((error as any).message?.includes('Extension context invalidated') || 
+                (error as any).message?.includes('Could not establish connection') ||
+                (error as any).message?.includes('Receiving end does not exist')) {
+                this.showStatus('拡張機能を再読み込みしてください', 'error');
+            } else {
+                this.showStatus('動画の再検索に失敗しました', 'error');
             }
-            
-            this.showStatus(errorMessage, 'error');
         } finally {
             this.isRefreshing = false;
             this.setRefreshButtonState(false);

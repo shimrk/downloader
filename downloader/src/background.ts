@@ -24,21 +24,31 @@ class VideoManager {
             sender: globalThis.chrome.runtime.MessageSender,
             sendResponse: (response?: any) => void
         ) => {
-            switch (message.action) {
-                case 'updateVideos':
-                    this.updateVideos((message as UpdateVideosMessage).videos, sender.tab?.id);
-                    break;
-                case 'getVideos':
-                    this.getVideos(sendResponse);
-                    return true; // 非同期レスポンスのため
-                case 'downloadVideo':
-                    this.downloadVideo((message as DownloadVideoMessage).video, sendResponse);
-                    return true; // 非同期レスポンスのため
-                case 'refreshVideos':
-                    this.refreshVideos(sender.tab?.id, sendResponse);
-                    return true; // 非同期レスポンスのため
+            try {
+                switch (message.action) {
+                    case 'updateVideos':
+                        this.updateVideos((message as UpdateVideosMessage).videos, sender.tab?.id);
+                        sendResponse({ success: true });
+                        return true;
+                    case 'getVideos':
+                        this.getVideos(sendResponse);
+                        return true;
+                    case 'downloadVideo':
+                        this.downloadVideo((message as DownloadVideoMessage).video, sendResponse);
+                        return true;
+                    case 'refreshVideos':
+                        this.refreshVideos(sender.tab?.id, sendResponse);
+                        return true;
+                    default:
+                        console.warn('Unknown message action:', message.action);
+                        sendResponse({ success: false, error: 'Unknown action' });
+                        return false;
+                }
+            } catch (error) {
+                console.error('Message handling error:', error);
+                sendResponse({ success: false, error: 'Message handling failed' });
+                return false;
             }
-            return false;
         });
     }
 
@@ -152,12 +162,22 @@ class VideoManager {
     }
 
     private updateVideos(videos: VideoInfo[], tabId?: number): void {
-        if (this.isDestroyed) return;
+        console.log('Background: updateVideos called with', videos.length, 'videos, tabId:', tabId);
+        
+        if (this.isDestroyed) {
+            console.log('Background: VideoManager is destroyed, ignoring update');
+            return;
+        }
         
         if (tabId && tabId === this.activeTabId) {
+            console.log('Background: Updating videos for active tab:', tabId);
             videos.forEach(video => {
                 this.videos.set(video.id, video);
+                console.log('Background: Added/updated video:', video.title);
             });
+            console.log('Background: Total videos after update:', this.videos.size);
+        } else {
+            console.log('Background: Tab ID mismatch or no tab ID, ignoring update. Active tab:', this.activeTabId, 'Received tab:', tabId);
         }
     }
 
@@ -294,35 +314,32 @@ class VideoManager {
             }
 
             // タブが存在するかチェック
-            try {
-                const tab = await globalThis.chrome.tabs.get(targetTabId);
-                if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-                    sendResponse({ success: false, error: 'このページでは動画検索ができません' });
-                    return;
-                }
-            } catch (error) {
-                sendResponse({ success: false, error: '指定されたタブが見つかりません' });
+            const tab = await globalThis.chrome.tabs.get(targetTabId);
+            if (!tab) {
+                console.warn('Tab not found:', targetTabId);
+                sendResponse({ success: false, error: 'Tab not found' });
                 return;
             }
 
-            // コンテンツスクリプトに動画検出を要求
-            await globalThis.chrome.tabs.sendMessage(targetTabId, { action: 'refreshVideos' });
+            console.log('Refreshing videos for tab:', targetTabId);
+            
+            // コンテンツスクリプトにリフレッシュメッセージを送信
+            await globalThis.chrome.tabs.sendMessage(targetTabId, {
+                action: 'refreshVideos'
+            });
+            
             sendResponse({ success: true });
         } catch (error) {
             console.error('Failed to refresh videos:', error);
-            let errorMessage = '動画の検索に失敗しました';
             
-            if (error instanceof Error) {
-                if (error.message.includes('Could not establish connection')) {
-                    errorMessage = 'コンテンツスクリプトとの接続に失敗しました。ページを再読み込みしてください。';
-                } else if (error.message.includes('No tab with id')) {
-                    errorMessage = 'タブが見つかりません。ページを再読み込みしてください。';
-                } else {
-                    errorMessage = error.message;
-                }
+            // 拡張機能コンテキスト無効化エラーの場合は適切に処理
+            if ((error as any).message?.includes('Extension context invalidated') || 
+                (error as any).message?.includes('Could not establish connection') ||
+                (error as any).message?.includes('Receiving end does not exist')) {
+                sendResponse({ success: false, error: 'Extension context invalidated' });
+            } else {
+                sendResponse({ success: false, error: 'Refresh failed' });
             }
-            
-            sendResponse({ success: false, error: errorMessage });
         }
     }
 
@@ -486,4 +503,16 @@ class VideoManager {
     }
 }
 
-export { VideoManager }; 
+// グローバルなVideoManagerインスタンス
+let videoManager: VideoManager | null = null;
+
+// 初期化関数
+function initializeVideoManager(): void {
+    if (!videoManager) {
+        console.log('Initializing VideoManager...');
+        videoManager = new VideoManager();
+    }
+}
+
+// 即座に初期化
+initializeVideoManager(); 

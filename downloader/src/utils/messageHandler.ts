@@ -81,14 +81,48 @@ export class MessageHandler {
      */
     sendVideosToBackground(videos: VideoInfo[]): void {
         try {
+            console.log('MessageHandler: Starting to send videos to background');
+            
+            // 拡張機能コンテキストが有効かチェック
+            if (!chrome.runtime?.id) {
+                console.warn('Extension context invalidated, skipping video update');
+                return;
+            }
+
+            console.log('MessageHandler: Extension context is valid, sending message');
+            
+            // メッセージ送信を試行
             chrome.runtime.sendMessage({
                 action: 'updateVideos',
                 videos: videos
-            }).catch(error => {
-                console.error('Failed to send videos to background:', error);
+            }, (response) => {
+                console.log('MessageHandler: Received response from background:', response);
+                
+                // レスポンスがエラーの場合の処理
+                if (chrome.runtime.lastError) {
+                    const error = chrome.runtime.lastError;
+                    console.error('MessageHandler: Chrome runtime error:', error);
+                    
+                    if (error.message?.includes('Extension context invalidated') || 
+                        error.message?.includes('Could not establish connection')) {
+                        console.log('Extension context invalidated, skipping video update');
+                    } else {
+                        console.error('Failed to send videos to background:', error);
+                    }
+                } else {
+                    console.log('MessageHandler: Successfully sent videos to background');
+                }
             });
         } catch (error) {
-            console.error('Error sending videos to background:', error);
+            console.error('MessageHandler: Exception while sending videos:', error);
+            
+            // 拡張機能コンテキスト無効化エラーの場合は静かに処理
+            if ((error as any).message?.includes('Extension context invalidated') || 
+                (error as any).message?.includes('Could not establish connection')) {
+                console.log('Extension context invalidated, skipping video update');
+            } else {
+                console.error('Error sending videos to background:', error);
+            }
         }
     }
 
