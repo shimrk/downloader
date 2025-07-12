@@ -514,5 +514,10 @@ function initializeVideoManager(): void {
     }
 }
 
-// 即座に初期化
-initializeVideoManager(); 
+// テスト用にVideoManagerクラスをエクスポート
+export { VideoManager };
+
+// テスト環境でない場合のみ即座に初期化
+if (typeof globalThis.chrome !== 'undefined') {
+    initializeVideoManager();
+} 

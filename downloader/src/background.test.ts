@@ -48,7 +48,14 @@ describe('Background Script', () => {
       download: vi.fn(),
       search: vi.fn()
     };
-    globalThis.chrome = mockChrome;
+    
+    // globalThis.chromeを設定
+    Object.defineProperty(globalThis, 'chrome', {
+      value: mockChrome,
+      writable: true,
+      configurable: true
+    });
+    
     videoManager = new VideoManager();
   });
 
@@ -56,6 +63,8 @@ describe('Background Script', () => {
     if (videoManager && typeof videoManager.destroy === 'function') {
       videoManager.destroy();
     }
+    // globalThis.chromeをクリーンアップ
+    delete (globalThis as any).chrome;
   });
 
   describe('VideoManager 初期化', () => {
