@@ -1,0 +1,39 @@
+# パフォーマンス最適化ガイドライン
+
+## 動画検出の最適化
+- 定期的な再検出（5秒間隔）
+- DOM変更の監視（MutationObserver）
+- 重複検出の回避
+
+## パフォーマンスユーティリティ
+- [downloader/src/utils/performanceOptimizer.ts](mdc:downloader/src/utils/performanceOptimizer.ts) - パフォーマンス最適化
+- [downloader/src/utils/duplicateChecker.ts](mdc:downloader/src/utils/duplicateChecker.ts) - 重複チェック
+- [downloader/src/utils/domObserver.ts](mdc:downloader/src/utils/domObserver.ts) - DOM監視
+
+## メモリ管理
+- 不要なイベントリスナーの削除
+- 大きなデータの適切な処理
+- タブ切り替え時のクリーンアップ
+
+## 通信最適化
+- メッセージの最小化
+- 不要な通信の削減
+- バッチ処理の活用
+
+## ファイル処理
+- [downloader/src/utils/fileUtils.ts](mdc:downloader/src/utils/fileUtils.ts) - ファイル処理ユーティリティ
+- [downloader/src/utils/videoProcessor.ts](mdc:downloader/src/utils/videoProcessor.ts) - 動画処理
+
+## キャッシュ戦略
+- 動画情報のキャッシュ
+- 設定の永続化
+- 不要な再計算の回避
+
+## 監視とメトリクス
+- パフォーマンスメトリクスの収集
+- メモリ使用量の監視
+- 処理時間の測定
+description:
+globs:
+alwaysApply: false
+---

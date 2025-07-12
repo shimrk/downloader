@@ -1,0 +1,42 @@
+# ビルドとデプロイメントガイドライン
+
+## ビルド設定
+- [downloader/webpack.config.js](mdc:downloader/webpack.config.js) - Webpack設定
+- [downloader/tsconfig.json](mdc:downloader/tsconfig.json) - TypeScript設定
+- [downloader/package.json](mdc:downloader/package.json) - プロジェクト設定
+
+## ビルドコマンド
+```bash
+cd downloader
+npm run build    # 本番用ビルド
+npm run dev      # 開発用ビルド（監視モード）
+npm run clean    # ビルドファイルのクリーンアップ
+```
+
+## 出力ディレクトリ
+- [downloader/dist/](mdc:downloader/dist/) - ビルド出力ディレクトリ
+- 拡張機能の配布用ファイルが生成される
+
+## 開発環境
+- ホットリロード対応
+- ソースマップの生成
+- 開発用の最適化設定
+
+## 本番環境
+- コードの最小化
+- 不要なファイルの除外
+- パフォーマンス最適化
+
+## 拡張機能の配布
+- `dist/`ディレクトリをZIP化
+- Chrome Web Storeにアップロード
+- マニフェストファイルの検証
+
+## トラブルシューティング
+- ビルドエラーの確認
+- 依存関係の解決
+- 設定ファイルの検証
+description:
+globs:
+alwaysApply: false
+---

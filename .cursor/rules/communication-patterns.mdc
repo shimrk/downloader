@@ -1,0 +1,54 @@
+# 通信パターンガイドライン
+
+## メッセージハンドラー
+- [downloader/src/utils/messageHandler.ts](mdc:downloader/src/utils/messageHandler.ts) - メッセージ処理ユーティリティ
+
+## 通信パターン
+
+### Content Script → Background Script
+```typescript
+chrome.runtime.sendMessage({
+    action: 'updateVideos',
+    videos: videoArray
+});
+```
+
+### Popup → Background Script
+```typescript
+chrome.runtime.sendMessage({
+    action: 'getVideos'
+}, (response) => {
+    // レスポンス処理
+});
+```
+
+### Background Script → Content Script
+```typescript
+chrome.tabs.sendMessage(tabId, {
+    action: 'refreshVideos'
+});
+```
+
+## メッセージ構造
+- `action`: 実行するアクション
+- `data`: 送信するデータ
+- `callback`: レスポンス処理関数
+
+## エラーハンドリング
+- 通信エラーの適切な処理
+- タイムアウトの設定
+- フォールバック処理の実装
+
+## 非同期通信
+- Promiseベースの通信
+- async/awaitパターンの使用
+- 適切なエラーハンドリング
+
+## セキュリティ
+- メッセージの検証
+- 不正なデータの拒否
+- 適切な権限チェック
+description:
+globs:
+alwaysApply: false
+---

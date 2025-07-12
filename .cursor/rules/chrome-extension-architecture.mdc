@@ -1,0 +1,42 @@
+# Chrome拡張機能アーキテクチャガイド
+
+## プロジェクト構造
+このプロジェクトはChrome拡張機能を使用してブラウザ内の動画を検出・ダウンロードする機能を提供します。
+
+### 主要ファイル
+- [downloader/src/manifest.json](mdc:downloader/src/manifest.json) - 拡張機能のマニフェストファイル
+- [downloader/src/background.ts](mdc:downloader/src/background.ts) - バックグラウンドスクリプト（サービスワーカー）
+- [downloader/src/content.ts](mdc:downloader/src/content.ts) - コンテンツスクリプト（動画検出）
+- [downloader/src/popup.ts](mdc:downloader/src/popup.ts) - ポップアップスクリプト（UI制御）
+- [downloader/src/popup.html](mdc:downloader/src/popup.html) - ポップアップUI
+
+### ユーティリティ
+- [downloader/src/utils/](mdc:downloader/src/utils/) - 共通ユーティリティ関数
+- [downloader/src/types/](mdc:downloader/src/types/) - TypeScript型定義
+
+### 設定ファイル
+- [downloader/webpack.config.js](mdc:downloader/webpack.config.js) - Webpack設定
+- [downloader/tsconfig.json](mdc:downloader/tsconfig.json) - TypeScript設定
+
+## コンポーネント説明
+
+### Content Script (content.ts)
+- **役割**: ページ内の動画要素を検出
+- **機能**: `<video>`要素、`<source>`要素、`<iframe>`要素の検出、DOM変更の監視
+
+### Background Script (background.ts)
+- **役割**: 拡張機能のメインロジック
+- **機能**: 動画情報の管理、ダウンロード処理、タブ管理
+
+### Popup (popup.ts + popup.html)
+- **役割**: ユーザーインターフェース
+- **機能**: 動画一覧の表示、ダウンロード操作、検索・クリア機能
+
+## 通信パターン
+- Content Script → Background Script: `chrome.runtime.sendMessage()`
+- Popup → Background Script: `chrome.runtime.sendMessage()` + コールバック
+- Background Script → Content Script: `chrome.tabs.sendMessage()`
+description:
+globs:
+alwaysApply: false
+---

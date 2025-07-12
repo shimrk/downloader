@@ -1,0 +1,38 @@
+# テストガイドライン
+
+## テスト構造
+- [downloader/tests/e2e/](mdc:downloader/tests/e2e/) - E2Eテストディレクトリ
+- [downloader/playwright.config.ts](mdc:downloader/playwright.config.ts) - Playwright設定
+- [downloader/vitest.config.ts](mdc:downloader/vitest.config.ts) - Vitest設定
+
+## E2Eテスト
+- [downloader/tests/e2e/extension.spec.ts](mdc:downloader/tests/e2e/extension.spec.ts) - 拡張機能全体のテスト
+- [downloader/tests/e2e/content-script.spec.ts](mdc:downloader/tests/e2e/content-script.spec.ts) - コンテンツスクリプトのテスト
+- [downloader/tests/e2e/popup.spec.ts](mdc:downloader/tests/e2e/popup.spec.ts) - ポップアップのテスト
+- [downloader/tests/e2e/download.spec.ts](mdc:downloader/tests/e2e/download.spec.ts) - ダウンロード機能のテスト
+
+## テスト実行
+- プロジェクトルートから `npm test` を実行
+- E2Eテストは `npm run test:e2e` で実行
+- 単体テストは `npm run test:unit` で実行
+
+## テストカバレッジ
+- 主要機能の100%カバレッジを目指す
+- エラーハンドリングのテストを含める
+- ユーザーインタラクションのテストを重視
+
+## デバッグ
+- Chrome DevToolsを使用したデバッグ
+- バックグラウンドスクリプト: `chrome://inspect/#extensions`
+- コンテンツスクリプト: ページのDevTools
+- ポップアップ: ポップアップを右クリック → 検証
+
+## ログ出力
+```typescript
+console.log('デバッグ情報:', data);
+console.error('エラーが発生しました:', error);
+```
+description:
+globs:
+alwaysApply: false
+---

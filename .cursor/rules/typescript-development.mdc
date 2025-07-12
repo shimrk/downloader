@@ -1,0 +1,35 @@
+# TypeScript開発ガイドライン
+
+## 型定義
+- 厳密な型チェックを有効にする
+- Chrome APIの型定義は `declare const chrome: any;` を使用
+- インターフェースを定義してデータ構造を明確にする
+
+## 型定義ファイル
+- [downloader/src/types/common.ts](mdc:downloader/src/types/common.ts) - 共通型定義
+- [downloader/src/types/errors.ts](mdc:downloader/src/types/errors.ts) - エラー型定義
+
+## コーディング規約
+- セミコロンを使用する
+- 関数の戻り値の型を明示する
+- 非同期関数は `async/await` を使用する
+- エラーハンドリングは `try-catch` を使用する
+
+## エラーハンドリング
+```typescript
+try {
+    // 非同期処理
+} catch (error) {
+    console.error('エラーが発生しました:', error);
+    // ユーザーフレンドリーなエラーメッセージを表示
+}
+```
+
+## Chrome API使用
+- Chrome APIの呼び出しは適切なエラーハンドリングを行う
+- 非同期APIはPromiseでラップする
+- 型安全性を保つため、適切な型アサーションを使用する
+description:
+globs:
+alwaysApply: false
+---
