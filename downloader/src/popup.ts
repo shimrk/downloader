@@ -196,7 +196,12 @@ class PopupManager {
                 this.showStatus('ダウンロードを開始しました', 'success');
                 this.showDownloadProgress(videoInfo.id);
             } else {
-                throw new Error(response.error || 'ダウンロードに失敗しました');
+                // CORSエラーの詳細表示
+                if (response.errorDetails?.isCorsError) {
+                    this.showCorsError(response.error, response.errorDetails);
+                } else {
+                    throw new Error(response.error || 'ダウンロードに失敗しました');
+                }
             }
         } catch (error) {
             console.error('Download failed:', error);
@@ -405,6 +410,58 @@ class PopupManager {
                 status.style.display = 'none';
             }, 3000);
         }
+    }
+
+    /**
+     * CORSエラーの詳細表示
+     */
+    private showCorsError(errorMessage: string, errorDetails: any): void {
+        const status = document.getElementById('status');
+        if (!status) return;
+
+        // CORSエラー専用のHTMLを生成
+        const suggestionsHtml = errorDetails.suggestions?.map((suggestion: string) => 
+            `<li>• ${suggestion}</li>`
+        ).join('') || '';
+
+        status.innerHTML = `
+            <div class="cors-error">
+                <div class="cors-error-header">
+                    <span class="cors-error-icon">🚫</span>
+                    <span class="cors-error-title">${errorMessage}</span>
+                </div>
+                <div class="cors-error-details">
+                    <div class="cors-error-type">エラータイプ: ${this.getCorsErrorTypeDisplay(errorDetails.errorType)}</div>
+                    ${suggestionsHtml ? `
+                        <div class="cors-error-suggestions">
+                            <div class="suggestions-title">対処方法:</div>
+                            <ul class="suggestions-list">${suggestionsHtml}</ul>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        
+        status.className = 'status error cors-error-container';
+        status.style.display = 'block';
+
+        // CORSエラーは長めに表示（10秒）
+        setTimeout(() => {
+            status.style.display = 'none';
+        }, 10000);
+    }
+
+    /**
+     * CORSエラータイプの表示名を取得
+     */
+    private getCorsErrorTypeDisplay(errorType: string): string {
+        const typeNames: { [key: string]: string } = {
+            'cors_policy': 'CORSポリシー違反',
+            'network': 'ネットワークエラー',
+            'server': 'サーバーエラー',
+            'unknown': '不明なエラー'
+        };
+        return typeNames[errorType] || errorType;
     }
 
     private sendMessage(message: Message): Promise<any> {

@@ -2,6 +2,7 @@
 declare const chrome: any;
 // background.ts - Chrome拡張のバックグラウンドスクリプト
 import { VideoInfo, Message, UpdateVideosMessage, DownloadVideoMessage } from './types/common';
+import { CorsHelper } from './utils/security';
 
 class VideoManager {
     private videos: Map<string, VideoInfo> = new Map();
@@ -253,15 +254,27 @@ class VideoManager {
             console.error('Error details:', error);
             console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
             
-            let errorMessage = 'ダウンロードに失敗しました';
+            // CORSエラーの詳細分析
+            const corsAnalysis = CorsHelper.analyzeCorsError(error);
             
-            if (error instanceof Error) {
+            // CORSエラーのログ記録
+            if (corsAnalysis.isCorsError) {
+                CorsHelper.logCorsError(error, videoInfo.url, 'download_video');
+            }
+            
+            let errorMessage = corsAnalysis.userMessage;
+            let errorDetails = {
+                isCorsError: corsAnalysis.isCorsError,
+                errorType: corsAnalysis.errorType,
+                suggestions: corsAnalysis.suggestions
+            };
+            
+            // CORSエラー以外のエラーの処理
+            if (!corsAnalysis.isCorsError && error instanceof Error) {
                 if (error.message.includes('NETWORK_FAILED')) {
                     errorMessage = 'ネットワークエラーが発生しました。URLが有効かどうか確認してください。';
                 } else if (error.message.includes('SERVER_FAILED')) {
                     errorMessage = 'サーバーエラーが発生しました。しばらく時間をおいて再試行してください。';
-                } else if (error.message.includes('ACCESS_DENIED')) {
-                    errorMessage = 'アクセスが拒否されました。CORS制限の可能性があります。';
                 } else if (error.message.includes('FILE_ACCESS_DENIED')) {
                     errorMessage = 'ファイルアクセスが拒否されました。';
                 } else if (error.message.includes('FILE_NO_SPACE')) {
@@ -276,9 +289,14 @@ class VideoManager {
             }
             
             console.error('Final error message:', errorMessage);
+            console.error('Error details:', errorDetails);
             console.error('=== Download Error End ===');
             
-            sendResponse({ success: false, error: errorMessage });
+            sendResponse({ 
+                success: false, 
+                error: errorMessage,
+                errorDetails: errorDetails
+            });
         }
     }
 
