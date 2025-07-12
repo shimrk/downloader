@@ -1,6 +1,7 @@
 /// <reference types="chrome" />
 // popup.ts - ポップアップの機能を実装
 import { VideoInfo, Message } from './types/common';
+import { VideoDownloaderError, createError, withErrorHandling } from './types/errors';
 
 class PopupManager {
     private videos: VideoInfo[] = [];
@@ -82,12 +83,11 @@ class PopupManager {
     }
 
     private async loadVideos(): Promise<void> {
-        try {
+        return withErrorHandling(async () => {
             // 拡張機能コンテキストが有効かチェック
             if (!chrome.runtime?.id) {
-                console.warn('Extension context invalidated, cannot load videos');
-                this.showStatus('拡張機能が無効化されています。ページを再読み込みしてください。', 'error');
-                return;
+                const error = createError.permission('拡張機能が無効化されています');
+                throw error;
             }
 
             // バックグラウンドから動画リストを取得
@@ -100,7 +100,7 @@ class PopupManager {
                 // 重複動画の情報を表示
                 this.showDuplicateInfo();
             }
-        } catch (error) {
+        }, { action: 'load_videos' }).catch(error => {
             // 拡張機能コンテキスト無効化エラーの場合は適切なメッセージを表示
             if ((error as any).message?.includes('Extension context invalidated') || 
                 (error as any).message?.includes('Could not establish connection')) {
@@ -108,9 +108,16 @@ class PopupManager {
                 this.showStatus('拡張機能が無効化されています。ページを再読み込みしてください。', 'error');
             } else {
                 console.error('Failed to load videos:', error);
-                this.showStatus('動画の読み込みに失敗しました', 'error');
+                const errorMessage = error instanceof VideoDownloaderError ? error.getUserMessage() : '動画の読み込みに失敗しました';
+                const errorDetails = error instanceof VideoDownloaderError ? {
+                    type: error.type,
+                    code: error.code,
+                    details: error.details,
+                    stack: error.stack
+                } : undefined;
+                this.showStatus(errorMessage, 'error', errorDetails);
             }
-        }
+        });
     }
 
     /**
@@ -122,26 +129,27 @@ class PopupManager {
         this.isRefreshing = true;
         this.setRefreshButtonState(true);
         
-        try {
+        return withErrorHandling(async () => {
             this.showStatus('動画を再検索中...', 'loading');
             
             // アクティブなタブを取得
             const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tabs.length === 0) {
-                this.showStatus('アクティブなタブが見つかりません', 'error');
-                return;
+                const error = createError.detection('アクティブなタブが見つかりません');
+                throw error;
             }
             
             const tabId = tabs[0].id;
             if (!tabId) {
-                this.showStatus('タブIDが取得できません', 'error');
-                return;
+                const error = createError.detection('タブIDが取得できません');
+                throw error;
             }
             
             // バックグラウンドにリフレッシュリクエストを送信
             const response = await chrome.runtime.sendMessage({
                 action: 'refreshVideos',
-                tabId: tabId
+                tabId: tabId,
+                forceRefresh: true // ← 追加
             });
             
             if (response?.success) {
@@ -152,23 +160,29 @@ class PopupManager {
                 }, 1000);
             } else {
                 const errorMessage = response?.error || '動画の再検索に失敗しました';
-                this.showStatus(errorMessage, 'error');
+                this.showStatus(errorMessage, 'error', response?.errorDetails);
             }
-        } catch (error) {
+        }, { action: 'refresh_videos' }).catch(error => {
             console.error('Failed to refresh videos:', error);
+            
+            let errorMessage: string;
             
             // 拡張機能コンテキスト無効化エラーの場合は適切なメッセージを表示
             if ((error as any).message?.includes('Extension context invalidated') || 
                 (error as any).message?.includes('Could not establish connection') ||
                 (error as any).message?.includes('Receiving end does not exist')) {
-                this.showStatus('拡張機能を再読み込みしてください', 'error');
+                errorMessage = '拡張機能を再読み込みしてください';
+            } else if (error instanceof VideoDownloaderError) {
+                errorMessage = error.getUserMessage();
             } else {
-                this.showStatus('動画の再検索に失敗しました', 'error');
+                errorMessage = '動画の再検索に失敗しました';
             }
-        } finally {
+            
+            this.showStatus(errorMessage, 'error');
+        }).finally(() => {
             this.isRefreshing = false;
             this.setRefreshButtonState(false);
-        }
+        });
     }
 
     private async clearVideos(): Promise<void> {
@@ -186,7 +200,7 @@ class PopupManager {
         this.downloadingVideos.add(videoInfo.id);
         this.updateDownloadButton(videoInfo.id, true);
 
-        try {
+        return withErrorHandling(async () => {
             const response = await this.sendMessage({
                 action: 'downloadVideo',
                 video: videoInfo
@@ -203,13 +217,15 @@ class PopupManager {
                     throw new Error(response.error || 'ダウンロードに失敗しました');
                 }
             }
-        } catch (error) {
+        }, { action: 'download_video', videoId: videoInfo.id }).catch(error => {
             console.error('Download failed:', error);
-            this.showStatus(error instanceof Error ? error.message : 'ダウンロードに失敗しました', 'error');
-        } finally {
+            const errorMessage = error instanceof VideoDownloaderError ? error.getUserMessage() : 
+                                (error instanceof Error ? error.message : 'ダウンロードに失敗しました');
+            this.showStatus(errorMessage, 'error');
+        }).finally(() => {
             this.downloadingVideos.delete(videoInfo.id);
             this.updateDownloadButton(videoInfo.id, false);
-        }
+        });
     }
 
     private async previewVideo(videoInfo: VideoInfo): Promise<void> {
@@ -396,7 +412,7 @@ class PopupManager {
         }
     }
 
-    private showStatus(message: string, type: 'loading' | 'error' | 'success'): void {
+    private showStatus(message: string, type: 'loading' | 'error' | 'success', errorDetails?: any): void {
         const status = document.getElementById('status');
         if (!status) return;
 
@@ -404,11 +420,61 @@ class PopupManager {
         status.className = `status ${type}`;
         status.style.display = 'block';
 
+        // エラーの場合は詳細パネルを表示
+        if (type === 'error' && errorDetails) {
+            this.showErrorDetails(errorDetails);
+        } else {
+            this.hideErrorDetails();
+        }
+
         // 3秒後に自動で非表示
         if (type !== 'loading') {
             setTimeout(() => {
                 status.style.display = 'none';
             }, 3000);
+        }
+    }
+
+    private showErrorDetails(errorDetails: any): void {
+        const panel = document.getElementById('errorDetailsPanel');
+        const content = document.getElementById('errorDetailsContent');
+        const typeElement = document.getElementById('errorType');
+        const codeElement = document.getElementById('errorCode');
+        const timestampElement = document.getElementById('errorTimestamp');
+        const detailsElement = document.getElementById('errorDetails');
+        const stackContainer = document.getElementById('errorStackContainer');
+        const stackElement = document.getElementById('errorStack');
+
+        if (!panel || !content || !typeElement || !codeElement || !timestampElement || !detailsElement || !stackContainer || !stackElement) return;
+
+        // エラー詳細を設定
+        typeElement.textContent = errorDetails.type || 'UNKNOWN';
+        codeElement.textContent = errorDetails.code || 'UNKNOWN_ERROR';
+        timestampElement.textContent = new Date().toLocaleString('ja-JP');
+        
+        // 詳細情報を設定
+        if (errorDetails.details) {
+            detailsElement.textContent = JSON.stringify(errorDetails.details, null, 2);
+        } else {
+            detailsElement.textContent = '詳細情報なし';
+        }
+
+        // スタックトレースを設定
+        if (errorDetails.stack) {
+            stackElement.textContent = errorDetails.stack;
+            stackContainer.style.display = 'block';
+        } else {
+            stackContainer.style.display = 'none';
+        }
+
+        // パネルを表示
+        panel.classList.add('show');
+    }
+
+    private hideErrorDetails(): void {
+        const panel = document.getElementById('errorDetailsPanel');
+        if (panel) {
+            panel.classList.remove('show');
         }
     }
 

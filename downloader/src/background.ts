@@ -3,6 +3,7 @@ declare const chrome: any;
 // background.ts - Chrome拡張のバックグラウンドスクリプト
 import { VideoInfo, Message, UpdateVideosMessage, DownloadVideoMessage } from './types/common';
 import { CorsHelper } from './utils/security';
+import { ErrorHandler, VideoDownloaderError, createError, withErrorHandling } from './types/errors';
 
 class VideoManager {
     private videos: Map<string, VideoInfo> = new Map();
@@ -25,7 +26,8 @@ class VideoManager {
             sender: globalThis.chrome.runtime.MessageSender,
             sendResponse: (response?: any) => void
         ) => {
-            try {
+            // エラーハンドリングでラップ
+            withErrorHandling(async () => {
                 switch (message.action) {
                     case 'updateVideos':
                         this.updateVideos((message as UpdateVideosMessage).videos, sender.tab?.id);
@@ -35,21 +37,23 @@ class VideoManager {
                         this.getVideos(sendResponse);
                         return true;
                     case 'downloadVideo':
-                        this.downloadVideo((message as DownloadVideoMessage).video, sendResponse);
+                        await this.downloadVideo((message as DownloadVideoMessage).video, sendResponse);
                         return true;
                     case 'refreshVideos':
-                        this.refreshVideos(sender.tab?.id, sendResponse);
+                        await this.refreshVideos(sender.tab?.id, sendResponse);
                         return true;
                     default:
-                        console.warn('Unknown message action:', message.action);
-                        sendResponse({ success: false, error: 'Unknown action' });
+                        const error = createError.validation(`Unknown message action: ${message.action}`);
+                        ErrorHandler.getInstance().handleError(error, { action: message.action });
+                        sendResponse({ success: false, error: error.getUserMessage() });
                         return false;
                 }
-            } catch (error) {
+            }, { action: message.action, tabId: sender.tab?.id }).catch(error => {
                 console.error('Message handling error:', error);
-                sendResponse({ success: false, error: 'Message handling failed' });
+                const userMessage = error instanceof VideoDownloaderError ? error.getUserMessage() : 'メッセージ処理に失敗しました';
+                sendResponse({ success: false, error: userMessage });
                 return false;
-            }
+            });
         });
     }
 
@@ -59,8 +63,10 @@ class VideoManager {
             if (this.isDestroyed) return;
             
             if (changeInfo.status === 'complete' && tab.url) {
+                console.log('Background: Tab updated, setting active tab ID:', tabId);
                 this.activeTabId = tabId;
                 // 新しいページが読み込まれたら動画リストをクリア
+                console.log('Background: Clearing videos for new page');
                 this.videos.clear();
             }
         });
@@ -170,16 +176,23 @@ class VideoManager {
             return;
         }
         
-        if (tabId && tabId === this.activeTabId) {
-            console.log('Background: Updating videos for active tab:', tabId);
-            videos.forEach(video => {
-                this.videos.set(video.id, video);
-                console.log('Background: Added/updated video:', video.title);
-            });
-            console.log('Background: Total videos after update:', this.videos.size);
+        // タブIDが提供されている場合は、アクティブタブと一致するかチェック
+        if (tabId) {
+            if (tabId === this.activeTabId) {
+                console.log('Background: Updating videos for active tab:', tabId);
+            } else {
+                console.log('Background: Tab ID mismatch, but still updating videos. Active tab:', this.activeTabId, 'Received tab:', tabId);
+            }
         } else {
-            console.log('Background: Tab ID mismatch or no tab ID, ignoring update. Active tab:', this.activeTabId, 'Received tab:', tabId);
+            console.log('Background: No tab ID provided, updating videos for current active tab:', this.activeTabId);
         }
+        
+        // 動画を更新（タブIDチェックを緩和）
+        videos.forEach(video => {
+            this.videos.set(video.id, video);
+            console.log('Background: Added/updated video:', video.title);
+        });
+        console.log('Background: Total videos after update:', this.videos.size);
     }
 
     // クリーンアップメソッド
@@ -196,11 +209,15 @@ class VideoManager {
     }
 
     private getVideos(sendResponse: (response: any) => void): void {
-        sendResponse({ videos: Array.from(this.videos.values()) });
+        const videos = Array.from(this.videos.values());
+        console.log('Background: getVideos called, returning', videos.length, 'videos');
+        console.log('Background: Active tab ID:', this.activeTabId);
+        console.log('Background: Videos in storage:', videos.map(v => ({ id: v.id, title: v.title })));
+        sendResponse({ videos });
     }
 
     private async downloadVideo(videoInfo: VideoInfo, sendResponse: (response: any) => void): Promise<void> {
-        try {
+        return withErrorHandling(async () => {
             console.log('=== Download Process Start ===');
             console.log('Video info:', {
                 id: videoInfo.id,
@@ -213,8 +230,9 @@ class VideoManager {
             
             // URLの有効性をチェック
             if (!this.isValidUrl(videoInfo.url)) {
-                console.error('Invalid URL detected:', videoInfo.url);
-                throw new Error('無効なURLです');
+                const error = createError.invalidUrl(videoInfo.url);
+                ErrorHandler.getInstance().handleError(error, { url: videoInfo.url, action: 'download_video' });
+                throw error;
             }
 
             console.log('URL validation passed');
@@ -249,7 +267,7 @@ class VideoManager {
             console.log('=== Download Process End ===');
 
             sendResponse({ success: true, downloadId });
-        } catch (error) {
+        }, { url: videoInfo.url, action: 'download_video' }).catch(error => {
             console.error('=== Download Error ===');
             console.error('Error details:', error);
             console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
@@ -262,29 +280,61 @@ class VideoManager {
                 CorsHelper.logCorsError(error, videoInfo.url, 'download_video');
             }
             
-            let errorMessage = corsAnalysis.userMessage;
-            let errorDetails = {
-                isCorsError: corsAnalysis.isCorsError,
-                errorType: corsAnalysis.errorType,
-                suggestions: corsAnalysis.suggestions
-            };
+            let errorMessage: string;
+            let errorDetails: any;
             
-            // CORSエラー以外のエラーの処理
-            if (!corsAnalysis.isCorsError && error instanceof Error) {
-                if (error.message.includes('NETWORK_FAILED')) {
-                    errorMessage = 'ネットワークエラーが発生しました。URLが有効かどうか確認してください。';
-                } else if (error.message.includes('SERVER_FAILED')) {
-                    errorMessage = 'サーバーエラーが発生しました。しばらく時間をおいて再試行してください。';
-                } else if (error.message.includes('FILE_ACCESS_DENIED')) {
-                    errorMessage = 'ファイルアクセスが拒否されました。';
-                } else if (error.message.includes('FILE_NO_SPACE')) {
-                    errorMessage = 'ディスク容量が不足しています。';
-                } else if (error.message.includes('FILE_NAME_TOO_LONG')) {
-                    errorMessage = 'ファイル名が長すぎます。';
-                } else if (error.message.includes('FILE_TOO_LARGE')) {
-                    errorMessage = 'ファイルサイズが大きすぎます。';
+            // CORSエラーの場合
+            if (corsAnalysis.isCorsError) {
+                errorMessage = corsAnalysis.userMessage;
+                errorDetails = {
+                    isCorsError: corsAnalysis.isCorsError,
+                    errorType: corsAnalysis.errorType,
+                    suggestions: corsAnalysis.suggestions
+                };
+            } else {
+                // その他のエラーの処理
+                if (error instanceof VideoDownloaderError) {
+                    errorMessage = error.getUserMessage();
+                    errorDetails = {
+                        type: error.type,
+                        code: error.code,
+                        details: error.details
+                    };
+                } else if (error instanceof Error) {
+                    // Chrome APIエラーの処理
+                    if (error.message.includes('NETWORK_FAILED')) {
+                        const networkError = createError.network('ネットワークエラーが発生しました', { originalError: error });
+                        errorMessage = networkError.getUserMessage();
+                        errorDetails = { type: 'NETWORK', code: 'NETWORK_ERROR' };
+                    } else if (error.message.includes('SERVER_FAILED')) {
+                        const serverError = createError.network('サーバーエラーが発生しました', { originalError: error });
+                        errorMessage = serverError.getUserMessage();
+                        errorDetails = { type: 'NETWORK', code: 'SERVER_ERROR' };
+                    } else if (error.message.includes('FILE_ACCESS_DENIED')) {
+                        const permissionError = createError.permission('ファイルアクセスが拒否されました', { originalError: error });
+                        errorMessage = permissionError.getUserMessage();
+                        errorDetails = { type: 'PERMISSION', code: 'FILE_ACCESS_DENIED' };
+                    } else if (error.message.includes('FILE_NO_SPACE')) {
+                        const spaceError = createError.download('ディスク容量が不足しています', { originalError: error });
+                        errorMessage = spaceError.getUserMessage();
+                        errorDetails = { type: 'DOWNLOAD', code: 'FILE_NO_SPACE' };
+                    } else if (error.message.includes('FILE_NAME_TOO_LONG')) {
+                        const nameError = createError.validation('ファイル名が長すぎます', { originalError: error });
+                        errorMessage = nameError.getUserMessage();
+                        errorDetails = { type: 'VALIDATION', code: 'FILE_NAME_TOO_LONG' };
+                    } else if (error.message.includes('FILE_TOO_LARGE')) {
+                        const sizeError = createError.download('ファイルサイズが大きすぎます', { originalError: error });
+                        errorMessage = sizeError.getUserMessage();
+                        errorDetails = { type: 'DOWNLOAD', code: 'FILE_TOO_LARGE' };
+                    } else {
+                        const unknownError = createError.download(error.message, { originalError: error });
+                        errorMessage = unknownError.getUserMessage();
+                        errorDetails = { type: 'DOWNLOAD', code: 'UNKNOWN_ERROR' };
+                    }
                 } else {
-                    errorMessage = error.message;
+                    const unknownError = createError.download('予期しないエラーが発生しました', { originalError: error });
+                    errorMessage = unknownError.getUserMessage();
+                    errorDetails = { type: 'DOWNLOAD', code: 'UNKNOWN_ERROR' };
                 }
             }
             
@@ -297,7 +347,7 @@ class VideoManager {
                 error: errorMessage,
                 errorDetails: errorDetails
             });
-        }
+        });
     }
 
     private isValidUrl(url: string): boolean {
@@ -315,50 +365,56 @@ class VideoManager {
     }
 
     private async refreshVideos(tabId: number | undefined, sendResponse: (response: any) => void): Promise<void> {
-        try {
+        return withErrorHandling(async () => {
             // tabIdが提供されていない場合は、アクティブなタブを取得
             let targetTabId = tabId;
             if (!targetTabId) {
                 const tabs = await globalThis.chrome.tabs.query({ active: true, currentWindow: true });
                 if (tabs.length === 0) {
-                    sendResponse({ success: false, error: 'アクティブなタブが見つかりません' });
-                    return;
+                    const error = createError.detection('アクティブなタブが見つかりません');
+                    throw error;
                 }
                 targetTabId = tabs[0].id;
                 if (!targetTabId) {
-                    sendResponse({ success: false, error: 'タブIDが取得できません' });
-                    return;
+                    const error = createError.detection('タブIDが取得できません');
+                    throw error;
                 }
             }
 
             // タブが存在するかチェック
             const tab = await globalThis.chrome.tabs.get(targetTabId);
             if (!tab) {
-                console.warn('Tab not found:', targetTabId);
-                sendResponse({ success: false, error: 'Tab not found' });
-                return;
+                const error = createError.detection(`タブが見つかりません: ${targetTabId}`);
+                throw error;
             }
 
             console.log('Refreshing videos for tab:', targetTabId);
             
             // コンテンツスクリプトにリフレッシュメッセージを送信
             await globalThis.chrome.tabs.sendMessage(targetTabId, {
-                action: 'refreshVideos'
+                action: 'refreshVideos',
+                forceRefresh: true
             });
             
             sendResponse({ success: true });
-        } catch (error) {
+        }, { tabId, action: 'refresh_videos' }).catch(error => {
             console.error('Failed to refresh videos:', error);
+            
+            let errorMessage: string;
             
             // 拡張機能コンテキスト無効化エラーの場合は適切に処理
             if ((error as any).message?.includes('Extension context invalidated') || 
                 (error as any).message?.includes('Could not establish connection') ||
                 (error as any).message?.includes('Receiving end does not exist')) {
-                sendResponse({ success: false, error: 'Extension context invalidated' });
+                errorMessage = '拡張機能が無効化されています。ページを再読み込みしてください。';
+            } else if (error instanceof VideoDownloaderError) {
+                errorMessage = error.getUserMessage();
             } else {
-                sendResponse({ success: false, error: 'Refresh failed' });
+                errorMessage = '動画の再検索に失敗しました';
             }
-        }
+            
+            sendResponse({ success: false, error: errorMessage });
+        });
     }
 
     private async generateFileName(videoInfo: VideoInfo): Promise<string> {

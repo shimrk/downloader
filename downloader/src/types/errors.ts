@@ -88,6 +88,8 @@ export interface ErrorLog {
         tabId?: number;
         url?: string;
         action?: string;
+        videoId?: string;
+        index?: number;
     };
 }
 
@@ -109,7 +111,7 @@ export class ErrorHandler {
     // エラーを処理してログに記録
     public handleError(
         error: Error | VideoDownloaderError,
-        context?: { tabId?: number; url?: string; action?: string }
+        context?: { tabId?: number; url?: string; action?: string; videoId?: string; index?: number }
     ): void {
         let videoDownloaderError: VideoDownloaderError;
 
@@ -260,7 +262,7 @@ export const createError = {
 // 非同期処理のエラーハンドリングヘルパー
 export const withErrorHandling = async <T>(
     fn: () => Promise<T>,
-    context?: { tabId?: number; url?: string; action?: string }
+    context?: { tabId?: number; url?: string; action?: string; videoId?: string; index?: number }
 ): Promise<T> => {
     try {
         return await fn();
@@ -271,7 +273,7 @@ export const withErrorHandling = async <T>(
 };
 
 // Chrome APIのエラーハンドリングヘルパー
-export const handleChromeError = (error: any, context?: { tabId?: number; url?: string; action?: string }): void => {
+export const handleChromeError = (error: any, context?: { tabId?: number; url?: string; action?: string; videoId?: string; index?: number }): void => {
     if (error) {
         const videoDownloaderError = new VideoDownloaderError(
             error.message || 'Chrome API error',

@@ -261,6 +261,80 @@
             line-height: 1.4;
         }
 
+        /* エラー詳細パネル */
+        .error-details-panel {
+            background: rgba(220, 53, 69, 0.05);
+            border: 1px solid #dc3545;
+            border-radius: var(--border-radius-small);
+            padding: 12px;
+            margin: 0 20px 20px 20px;
+            display: none;
+        }
+
+        .error-details-panel.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .error-details-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .error-details-title {
+            font-weight: 600;
+            color: #721c24;
+            font-size: 13px;
+        }
+
+        .error-details-toggle {
+            background: none;
+            border: none;
+            color: #721c24;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+
+        .error-details-toggle:hover {
+            background: rgba(220, 53, 69, 0.1);
+        }
+
+        .error-details-content {
+            font-size: 11px;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+
+        .error-details-item {
+            margin-bottom: 4px;
+        }
+
+        .error-details-label {
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .error-details-value {
+            margin-left: 4px;
+        }
+
+        .error-details-stack {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 10px;
+            white-space: pre-wrap;
+            max-height: 100px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+
         .status.success {
             background: rgba(40, 167, 69, 0.1);
             color: #155724;
@@ -614,6 +688,36 @@
         </div>
 
         <div id="status" class="status" style="display: none;"></div>
+
+        <!-- エラー詳細パネル -->
+        <div id="errorDetailsPanel" class="error-details-panel">
+            <div class="error-details-header">
+                <div class="error-details-title">エラー詳細</div>
+                <button class="error-details-toggle" onclick="toggleErrorDetails()">詳細表示</button>
+            </div>
+            <div id="errorDetailsContent" class="error-details-content" style="display: none;">
+                <div class="error-details-item">
+                    <span class="error-details-label">エラータイプ:</span>
+                    <span id="errorType" class="error-details-value">-</span>
+                </div>
+                <div class="error-details-item">
+                    <span class="error-details-label">エラーコード:</span>
+                    <span id="errorCode" class="error-details-value">-</span>
+                </div>
+                <div class="error-details-item">
+                    <span class="error-details-label">発生時刻:</span>
+                    <span id="errorTimestamp" class="error-details-value">-</span>
+                </div>
+                <div class="error-details-item">
+                    <span class="error-details-label">詳細情報:</span>
+                    <span id="errorDetails" class="error-details-value">-</span>
+                </div>
+                <div id="errorStackContainer" class="error-details-item" style="display: none;">
+                    <span class="error-details-label">スタックトレース:</span>
+                    <div id="errorStack" class="error-details-stack"></div>
+                </div>
+            </div>
+        </div>
 
         <div class="filters">
             <button class="filter-btn active" data-filter="all">すべて</button>

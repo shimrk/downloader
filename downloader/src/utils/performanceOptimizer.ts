@@ -18,14 +18,22 @@ export class PerformanceOptimizer {
     /**
      * 検出が必要かどうかを判定
      * @param currentVideos 現在の動画マップ
+     * @param forceRefresh 強制リフレッシュフラグ
      * @returns 検出が必要な場合true
      */
-    shouldDetect(currentVideos: Map<string, VideoInfo>): boolean {
+    shouldDetect(currentVideos: Map<string, VideoInfo>, forceRefresh: boolean = false): boolean {
         const now = Date.now();
         const timeSinceLastDetection = now - this.lastDetectionTime;
         const videoCount = currentVideos.size;
         
-        console.log(`🔍 Performance check: timeSinceLastDetection=${timeSinceLastDetection}ms, videoCount=${videoCount}`);
+        console.log(`🔍 Performance check: timeSinceLastDetection=${timeSinceLastDetection}ms, videoCount=${videoCount}, forceRefresh=${forceRefresh}`);
+        
+        // 強制リフレッシュの場合は必ず実行
+        if (forceRefresh) {
+            console.log(`✅ Force refresh requested, proceeding with detection`);
+            this.lastDetectionTime = now;
+            return true;
+        }
         
         // 初回検出は必ず実行
         if (this.lastDetectionTime === 0) {
