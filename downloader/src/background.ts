@@ -213,6 +213,12 @@ class VideoManager {
         console.log('Background: getVideos called, returning', videos.length, 'videos');
         console.log('Background: Active tab ID:', this.activeTabId);
         console.log('Background: Videos in storage:', videos.map(v => ({ id: v.id, title: v.title })));
+        
+        // ポップアップからの要求かどうかを確認
+        const stack = new Error().stack;
+        const isFromPopup = stack?.includes('popup.js') || stack?.includes('popup.ts');
+        console.log('Background: getVideos called from popup:', isFromPopup);
+        
         sendResponse({ videos });
     }
 
@@ -390,13 +396,43 @@ class VideoManager {
 
             console.log('Refreshing videos for tab:', targetTabId);
             
+            // 動画リストをクリア（新しい検索の準備）
+            this.videos.clear();
+            console.log('Background: Cleared existing videos for refresh');
+            
             // コンテンツスクリプトにリフレッシュメッセージを送信
             await globalThis.chrome.tabs.sendMessage(targetTabId, {
                 action: 'refreshVideos',
                 forceRefresh: true
             });
             
-            sendResponse({ success: true });
+            // 動画検出の完了を待つ（最大10秒）
+            let attempts = 0;
+            const maxAttempts = 100; // 100ms × 100 = 10秒
+            const checkInterval = 100; // 100ms
+            
+            while (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, checkInterval));
+                attempts++;
+                
+                // 動画が検出されたかチェック
+                if (this.videos.size > 0) {
+                    console.log(`Background: Videos detected after ${attempts * checkInterval}ms`);
+                    sendResponse({ success: true, message: `${this.videos.size}個の動画を検出しました`, videoCount: this.videos.size });
+                    return;
+                }
+            }
+            
+            // タイムアウトの場合でも、検出処理は完了している可能性がある
+            console.log('Background: Video detection timeout, checking final state');
+            if (this.videos.size > 0) {
+                console.log(`Background: Videos found after timeout: ${this.videos.size}`);
+                sendResponse({ success: true, message: `${this.videos.size}個の動画を検出しました`, videoCount: this.videos.size });
+            } else {
+                console.log('Background: No videos detected after timeout');
+                sendResponse({ success: true, message: '動画が見つかりませんでした', videoCount: 0 });
+            }
+            
         }, { tabId, action: 'refresh_videos' }).catch(error => {
             console.error('Failed to refresh videos:', error);
             
