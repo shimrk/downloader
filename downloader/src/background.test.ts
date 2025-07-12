@@ -21,14 +21,6 @@ interface VideoInfo {
   quality?: string;
 }
 
-// Message型の定義
-interface Message {
-  action: string;
-  videos?: VideoInfo[];
-  video?: VideoInfo;
-  tabId?: number;
-}
-
 describe('Background Script', () => {
   let videoManager: any;
 

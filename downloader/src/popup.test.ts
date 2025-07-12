@@ -158,19 +158,6 @@ describe('Popup Script', () => {
 
   describe('HTMLエスケープ', () => {
     it('should escape HTML characters', () => {
-      const escapeHtml = (text: string): string => {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-      };
-
-      // モックのcreateElementを設定
-      const mockCreateElement = vi.fn().mockReturnValue({
-        textContent: '',
-        innerHTML: ''
-      });
-      mockDocument.createElement = mockCreateElement;
-
       // 実際のテストでは、より簡単な実装を使用
       const simpleEscapeHtml = (text: string): string => {
         return text
