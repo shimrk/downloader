@@ -1,4 +1,5 @@
 /// <reference types="chrome" />
+declare const chrome: any;
 // background.ts - Chrome拡張のバックグラウンドスクリプト
 import { VideoInfo, Message, UpdateVideosMessage, DownloadVideoMessage } from './types/common';
 
@@ -18,9 +19,9 @@ class VideoManager {
     }
 
     private setupMessageListeners(): void {
-        chrome.runtime.onMessage.addListener((
+        globalThis.chrome.runtime.onMessage.addListener((
             message: Message,
-            sender: chrome.runtime.MessageSender,
+            sender: globalThis.chrome.runtime.MessageSender,
             sendResponse: (response?: any) => void
         ) => {
             switch (message.action) {
@@ -43,7 +44,7 @@ class VideoManager {
 
     private setupTabListeners(): void {
         // タブが更新されたときの処理
-        chrome.tabs.onUpdated.addListener((tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+        globalThis.chrome.tabs.onUpdated.addListener((tabId: number, changeInfo: globalThis.chrome.tabs.TabChangeInfo, tab: globalThis.chrome.tabs.Tab) => {
             if (this.isDestroyed) return;
             
             if (changeInfo.status === 'complete' && tab.url) {
@@ -54,13 +55,13 @@ class VideoManager {
         });
 
         // タブがアクティブになったときの処理
-        chrome.tabs.onActivated.addListener((activeInfo: chrome.tabs.TabActiveInfo) => {
+        globalThis.chrome.tabs.onActivated.addListener((activeInfo: globalThis.chrome.tabs.TabActiveInfo) => {
             if (this.isDestroyed) return;
             this.activeTabId = activeInfo.tabId;
         });
 
         // タブが閉じられたときの処理
-        chrome.tabs.onRemoved.addListener((tabId: number) => {
+        globalThis.chrome.tabs.onRemoved.addListener((tabId: number) => {
             if (this.isDestroyed) return;
             
             if (tabId === this.activeTabId) {
@@ -72,7 +73,7 @@ class VideoManager {
 
     private setupDownloadListeners(): void {
         // ダウンロード開始時のイベント
-        chrome.downloads.onCreated.addListener((downloadItem) => {
+        globalThis.chrome.downloads.onCreated.addListener((downloadItem) => {
             console.log('=== Download Created ===');
             console.log('Download item:', {
                 id: downloadItem.id,
@@ -85,7 +86,7 @@ class VideoManager {
         });
 
         // ダウンロード状態変更時のイベント
-        chrome.downloads.onChanged.addListener((delta) => {
+        globalThis.chrome.downloads.onChanged.addListener((delta) => {
             console.log('=== Download State Changed ===');
             console.log('Delta:', delta);
             
@@ -96,7 +97,7 @@ class VideoManager {
                 
                 if (newState === 'interrupted') {
                     // ダウンロードが中断された場合
-                    chrome.downloads.search({ id: delta.id }, (downloads) => {
+                    globalThis.chrome.downloads.search({ id: delta.id }, (downloads) => {
                         if (downloads.length > 0) {
                             const download = downloads[0];
                             console.error('=== Download Interrupted ===');
@@ -115,7 +116,7 @@ class VideoManager {
                     console.log(`Download ${delta.id} completed successfully`);
                     
                     // 完了したダウンロードの詳細を取得
-                    chrome.downloads.search({ id: delta.id }, (downloads) => {
+                    globalThis.chrome.downloads.search({ id: delta.id }, (downloads) => {
                         if (downloads.length > 0) {
                             const download = downloads[0];
                             console.log('Completed download details:', {
@@ -144,7 +145,7 @@ class VideoManager {
         });
 
         // ダウンロード削除時のイベント
-        chrome.downloads.onErased.addListener((downloadId) => {
+        globalThis.chrome.downloads.onErased.addListener((downloadId) => {
             console.log('=== Download Erased ===');
             console.log('Download erased:', downloadId);
         });
@@ -212,7 +213,7 @@ class VideoManager {
             }
             
             // ダウンロードオプションを設定
-            const downloadOptions: chrome.downloads.DownloadOptions = {
+            const downloadOptions: globalThis.chrome.downloads.DownloadOptions = {
                 url: videoInfo.url,
                 filename: fileName,
                 saveAs: true
@@ -222,7 +223,7 @@ class VideoManager {
             console.log('Starting download...');
             
             // ダウンロードを開始
-            const downloadId = await chrome.downloads.download(downloadOptions);
+            const downloadId = await globalThis.chrome.downloads.download(downloadOptions);
             console.log('Download started with ID:', downloadId);
             console.log('=== Download Process End ===');
 
@@ -280,7 +281,7 @@ class VideoManager {
             // tabIdが提供されていない場合は、アクティブなタブを取得
             let targetTabId = tabId;
             if (!targetTabId) {
-                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                const tabs = await globalThis.chrome.tabs.query({ active: true, currentWindow: true });
                 if (tabs.length === 0) {
                     sendResponse({ success: false, error: 'アクティブなタブが見つかりません' });
                     return;
@@ -294,7 +295,7 @@ class VideoManager {
 
             // タブが存在するかチェック
             try {
-                const tab = await chrome.tabs.get(targetTabId);
+                const tab = await globalThis.chrome.tabs.get(targetTabId);
                 if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
                     sendResponse({ success: false, error: 'このページでは動画検索ができません' });
                     return;
@@ -305,7 +306,7 @@ class VideoManager {
             }
 
             // コンテンツスクリプトに動画検出を要求
-            await chrome.tabs.sendMessage(targetTabId, { action: 'refreshVideos' });
+            await globalThis.chrome.tabs.sendMessage(targetTabId, { action: 'refreshVideos' });
             sendResponse({ success: true });
         } catch (error) {
             console.error('Failed to refresh videos:', error);
@@ -435,7 +436,7 @@ class VideoManager {
     private async ensureUniqueFileName(fileName: string): Promise<string> {
         try {
             // Chromeのダウンロード履歴を検索
-            const downloads = await chrome.downloads.search({
+            const downloads = await globalThis.chrome.downloads.search({
                 filename: fileName
             });
             
@@ -453,7 +454,7 @@ class VideoManager {
             
             // 重複しなくなるまで番号を増やす
             while (true) {
-                const existingDownloads = await chrome.downloads.search({
+                const existingDownloads = await globalThis.chrome.downloads.search({
                     filename: newFileName
                 });
                 
@@ -485,7 +486,4 @@ class VideoManager {
     }
 }
 
-// バックグラウンドスクリプトの初期化
-new VideoManager();
-
-console.log('動画ダウンローダー拡張機能のバックグラウンドスクリプトが起動しました'); 
+export { VideoManager }; 
