@@ -21,17 +21,16 @@
         "noImplicitThis": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
-        "types": ["chrome"]
+        "types": ["chrome", "node"]
     },
     "include": [
         "src/**/*",
-        "src/types/**/*"
+        "src/types/**/*",
+        "tests/**/*"
     ],
     "exclude": [
         "node_modules",
         "dist",
-        "src/test/**/*",
-        "**/*.test.ts",
-        "**/*.spec.ts"
+        "src/test/**/*"
     ]
 }

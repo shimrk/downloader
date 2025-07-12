@@ -5,7 +5,14 @@
   "scripts": {
     "dev": "./scripts/dev-webpack-only.sh"
   },
-  "keywords": ["chrome-extension", "docker", "development"],
+  "keywords": [
+    "chrome-extension",
+    "docker",
+    "development"
+  ],
   "author": "",
-  "license": "MIT"
-} 
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.13"
+  }
+}
