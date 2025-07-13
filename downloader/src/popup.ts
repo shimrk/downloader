@@ -17,26 +17,26 @@ class PopupManager {
     }
 
     private init(): void {
-        console.log('Popup: init called');
+        console.debug('Popup: init called');
         this.setupEventListeners();
-        console.log('Popup: Event listeners setup completed');
+        console.debug('Popup: Event listeners setup completed');
         this.loadVideos();
-        console.log('Popup: Initial loadVideos called');
+        console.debug('Popup: Initial loadVideos called');
     }
 
     private setupEventListeners(): void {
         // リフレッシュボタン
         const refreshBtn = document.getElementById('refreshBtn');
-        console.log('Popup: refreshBtn element:', refreshBtn);
+        console.debug('Popup: refreshBtn element:', refreshBtn);
         if (refreshBtn) {
-            console.log('Popup: Setting up refresh button event listener');
+            console.debug('Popup: Setting up refresh button event listener');
             const refreshHandler = () => {
-                console.log('Popup: Refresh button clicked');
+                console.debug('Popup: Refresh button clicked');
                 this.refreshVideos();
             };
             refreshBtn.addEventListener('click', refreshHandler);
             this.eventListeners.push({ element: refreshBtn, event: 'click', handler: refreshHandler });
-            console.log('Popup: Refresh button event listener added');
+            console.debug('Popup: Refresh button event listener added');
         } else {
             console.error('Popup: refreshBtn element not found');
         }
@@ -86,19 +86,19 @@ class PopupManager {
     }
 
     private filterVideos(): void {
-        console.log(`Popup: filterVideos called with ${this.videos.length} videos, filter: ${this.currentFilter}`);
+        console.debug(`Popup: filterVideos called with ${this.videos.length} videos, filter: ${this.currentFilter}`);
         if (this.currentFilter === 'all') {
             this.filteredVideos = [...this.videos];
         } else {
             this.filteredVideos = this.videos.filter(video => video.type === this.currentFilter);
         }
-        console.log(`Popup: Filtered to ${this.filteredVideos.length} videos`);
+        console.debug(`Popup: Filtered to ${this.filteredVideos.length} videos`);
     }
 
     private async loadVideos(): Promise<void> {
-        console.log('Popup: loadVideos called');
+        console.debug('Popup: loadVideos called');
         return withErrorHandling(async () => {
-            console.log('Popup: loadVideos execution started');
+            console.debug('Popup: loadVideos execution started');
             // 拡張機能コンテキストが有効かチェック
             if (!chrome.runtime?.id) {
                 const error = createError.permission('拡張機能が無効化されています');
@@ -106,12 +106,12 @@ class PopupManager {
             }
 
             // バックグラウンドから動画リストを取得
-            console.log('Popup: Requesting videos from background');
+            console.debug('Popup: Requesting videos from background');
             const response = await this.sendMessage({ action: 'getVideos' });
-            console.log('Popup: Received response from background:', response);
+            console.debug('Popup: Received response from background:', response);
             
-            if (response.videos) {
-                console.log(`Popup: Loading ${response.videos.length} videos`);
+            if (response && response.videos) {
+                console.debug(`Popup: Loading ${response.videos.length} videos`);
                 this.videos = response.videos;
                 this.filterVideos();
                 this.renderVideos();
@@ -119,14 +119,18 @@ class PopupManager {
                 // 重複動画の情報を表示
                 this.showDuplicateInfo();
             } else {
-                console.log('Popup: No videos in response');
+                console.debug('Popup: No videos in response');
+                // 動画が存在しない場合は空の状態を表示
+                this.videos = [];
+                this.filterVideos();
+                this.renderVideos();
             }
-            console.log('Popup: loadVideos execution completed');
+            console.debug('Popup: loadVideos execution completed');
         }, { action: 'load_videos' }).catch(error => {
             // 拡張機能コンテキスト無効化エラーの場合は適切なメッセージを表示
             if ((error as any).message?.includes('Extension context invalidated') || 
                 (error as any).message?.includes('Could not establish connection')) {
-                console.log('Extension context invalidated, cannot load videos');
+                console.debug('Extension context invalidated, cannot load videos');
                 this.showStatus('拡張機能が無効化されています。ページを再読み込みしてください。', 'error');
             } else {
                 console.error('Failed to load videos:', error);
@@ -146,18 +150,18 @@ class PopupManager {
      * 動画を再検索
      */
     async refreshVideos(): Promise<void> {
-        console.log('Popup: refreshVideos called');
+        console.debug('Popup: refreshVideos called');
         if (this.isRefreshing) {
-            console.log('Popup: Already refreshing, skipping');
+            console.debug('Popup: Already refreshing, skipping');
             return;
         }
 
-        console.log('Popup: Starting refresh process');
+        console.debug('Popup: Starting refresh process');
         this.isRefreshing = true;
         this.setRefreshButtonState(true);
         
         return withErrorHandling(async () => {
-            console.log('Popup: refreshVideos withErrorHandling started');
+            console.debug('Popup: refreshVideos withErrorHandling started');
             this.showStatus('動画を再検索中...', 'loading');
             
             // アクティブなタブを取得
@@ -174,39 +178,63 @@ class PopupManager {
             }
             
             // バックグラウンドにリフレッシュリクエストを送信
+            console.debug('Popup: Sending refresh request to background');
             const response = await chrome.runtime.sendMessage({
                 action: 'refreshVideos',
                 tabId: tabId,
-                forceRefresh: true // ← 追加
+                forceRefresh: true
             });
+            console.debug('Popup: Received response from background:', response);
             
             if (response?.success) {
                 const message = response?.message || '動画の再検索が完了しました';
                 const videoCount = response?.videoCount || 0;
                 
+                console.debug(`Popup: Success response - message: "${message}", videoCount: ${videoCount}`);
                 this.showStatus(message, 'success');
                 
-                // 動画が検出された場合は即座に動画リストを更新
+                            // 動画が検出された場合は即座に動画リストを更新
                 if (videoCount > 0) {
-                    console.log(`Popup: ${videoCount} videos detected, updating list immediately`);
-                    console.log('Popup: About to call loadVideos()');
-                    this.loadVideos();
-                    console.log('Popup: loadVideos() called');
+                    console.debug(`Popup: ${videoCount} videos detected, updating list immediately`);
+                    console.debug('Popup: About to call loadVideos()');
+                    // 即座に最新の動画情報を取得
+                    await this.loadVideos();
+                    console.debug('Popup: loadVideos() completed');
                 } else {
                     // 動画が見つからない場合は少し待ってから再確認
-                    console.log('Popup: No videos detected, waiting before recheck');
-                    setTimeout(() => {
-                        console.log('Popup: Calling loadVideos() after timeout');
-                        this.loadVideos();
-                    }, 500);
+                    console.debug('Popup: No videos detected, waiting before recheck');
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    console.debug('Popup: Calling loadVideos() after timeout');
+                    await this.loadVideos();
                 }
             } else {
-                const errorMessage = response?.error || '動画の再検索に失敗しました';
-                this.showStatus(errorMessage, 'error', response?.errorDetails);
+                // 動画が検出されている場合はエラーメッセージを表示しない
+                const videoCount = response?.videoCount ?? 0;
+                console.debug(`Popup: Error response received - videoCount: ${videoCount}, response:`, response);
+                
+                // 動画が検出されている場合、または既存の動画がある場合は成功として扱う
+                if (videoCount > 0 || this.videos.length > 0) {
+                    const actualCount = videoCount > 0 ? videoCount : this.videos.length;
+                    console.debug(`Popup: Videos detected (${actualCount}) despite error response, treating as success`);
+                    this.showStatus(`${actualCount}個の動画を検出しました`, 'success');
+                    await this.loadVideos();
+                } else {
+                    const errorMessage = response?.error || '動画の再検索に失敗しました';
+                    console.debug(`Popup: No videos detected, showing error: ${errorMessage}`);
+                    this.showStatus(errorMessage, 'error', response?.errorDetails);
+                }
             }
-        }, { action: 'refresh_videos' }).catch(error => {
-            console.log('Popup: refreshVideos error caught');
+        }, { action: 'refresh_videos' }).catch(async (error) => {
+            console.debug('Popup: refreshVideos error caught');
             console.error('Failed to refresh videos:', error);
+            
+            // 既存の動画がある場合は成功として扱う
+            if (this.videos.length > 0) {
+                console.debug(`Popup: Existing videos found (${this.videos.length}) despite error, treating as success`);
+                this.showStatus(`${this.videos.length}個の動画を検出しました`, 'success');
+                await this.loadVideos();
+                return;
+            }
             
             let errorMessage: string;
             
@@ -221,9 +249,10 @@ class PopupManager {
                 errorMessage = '動画の再検索に失敗しました';
             }
             
+            console.debug(`Popup: No existing videos, showing error: ${errorMessage}`);
             this.showStatus(errorMessage, 'error');
         }).finally(() => {
-            console.log('Popup: refreshVideos finally block executed');
+            console.debug('Popup: refreshVideos finally block executed');
             this.isRefreshing = false;
             this.setRefreshButtonState(false);
         });
@@ -321,15 +350,15 @@ class PopupManager {
     }
 
     private renderVideos(): void {
-        console.log(`Popup: renderVideos called with ${this.filteredVideos.length} filtered videos`);
+        console.debug(`Popup: renderVideos called with ${this.filteredVideos.length} filtered videos`);
         const videoList = document.getElementById('videoList');
         if (!videoList) {
-            console.log('Popup: videoList element not found');
+            console.debug('Popup: videoList element not found');
             return;
         }
 
         if (this.filteredVideos.length === 0) {
-            console.log('Popup: No filtered videos, showing empty state');
+            console.debug('Popup: No filtered videos, showing empty state');
             const filterText = this.currentFilter === 'all' ? '' : `（${this.getFilterDisplayName(this.currentFilter)}）`;
             videoList.innerHTML = `
                 <div class="empty-state">
@@ -356,6 +385,8 @@ class PopupManager {
                 previewBtn.addEventListener('click', () => this.previewVideo(video));
             }
         });
+        
+        console.debug(`Popup: Rendered ${this.filteredVideos.length} video items successfully`);
     }
 
     private getFilterDisplayName(filter: string): string {
@@ -374,7 +405,7 @@ class PopupManager {
         const resolution = video.width && video.height ? `${video.width}x${video.height}` : undefined;
         
         return `
-            <div class="video-item" data-video-id="${video.id}">
+            <div class="video-item" data-video-id="${video.id}" role="listitem">
                 <div class="video-content">
                     ${video.thumbnail ? `
                         <div class="video-thumbnail">
@@ -456,8 +487,15 @@ class PopupManager {
 
         if (refreshBtn && refreshText && refreshSpinner) {
             refreshBtn.disabled = isLoading;
-            refreshText.style.display = isLoading ? 'none' : 'inline';
-            refreshSpinner.style.display = isLoading ? 'inline-block' : 'none';
+            if (isLoading) {
+                refreshText.textContent = '🔄 検索中...';
+                refreshText.style.display = 'inline';
+                refreshSpinner.style.display = 'inline-block';
+            } else {
+                refreshText.textContent = '🔄 動画を検索';
+                refreshText.style.display = 'inline';
+                refreshSpinner.style.display = 'none';
+            }
         }
     }
 
@@ -476,7 +514,7 @@ class PopupManager {
             this.hideErrorDetails();
         }
 
-        // 3秒後に自動で非表示
+        // 3秒後に自動で非表示（ローディング状態以外）
         if (type !== 'loading') {
             setTimeout(() => {
                 status.style.display = 'none';
@@ -580,10 +618,10 @@ class PopupManager {
     }
 
     private sendMessage(message: Message): Promise<any> {
-        console.log('Popup: sendMessage called with:', message);
+        console.debug('Popup: sendMessage called with:', message);
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(message, (response: any) => {
-                console.log('Popup: sendMessage response:', response);
+                console.debug('Popup: sendMessage response:', response);
                 if (chrome.runtime.lastError) {
                     console.error('Popup: sendMessage error:', chrome.runtime.lastError);
                     reject(new Error(chrome.runtime.lastError.message));

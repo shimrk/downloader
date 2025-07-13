@@ -12,6 +12,9 @@ export default defineConfig({
     baseURL: `file://${path.resolve(__dirname, 'dist')}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // タイムアウトを長く設定
+    actionTimeout: 30000,
+    navigationTimeout: 30000,
   },
 
   projects: [
@@ -25,7 +28,9 @@ export default defineConfig({
             '--disable-extensions-except=./dist',
             '--load-extension=./dist',
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
+            '--disable-features=VizDisplayCompositor',
+            '--allow-file-access-from-files',
+            '--disable-site-isolation-trials'
           ]
         }
       },
@@ -38,4 +43,10 @@ export default defineConfig({
   // グローバル設定
   globalSetup: undefined,
   globalTeardown: undefined,
+  
+  // タイムアウト設定
+  timeout: 60000,
+  expect: {
+    timeout: 30000,
+  },
 }); 

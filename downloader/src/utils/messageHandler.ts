@@ -9,10 +9,16 @@ import { VideoInfo, Message, DownloadVideoMessage } from '../types/common';
  */
 export class MessageHandler {
     private onDownloadRequest: ((videoInfo: VideoInfo, sendResponse: (response: any) => void) => void) | null = null;
+    private static isInitialized = false;
 
     constructor(onDownloadRequest?: (videoInfo: VideoInfo, sendResponse: (response: any) => void) => void) {
         this.onDownloadRequest = onDownloadRequest || null;
-        this.setupMessageListener();
+        
+        // シングルトンパターンで重複初期化を防ぐ
+        if (!MessageHandler.isInitialized) {
+            this.setupMessageListener();
+            MessageHandler.isInitialized = true;
+        }
     }
 
     /**
@@ -182,6 +188,7 @@ export class MessageHandler {
      */
     destroy(): void {
         this.onDownloadRequest = null;
+        MessageHandler.isInitialized = false;
         // chrome.runtime.onMessageのリスナーは自動的に削除される
     }
 }

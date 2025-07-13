@@ -175,12 +175,19 @@ describe('機能名', () => {
 
 ### ログ出力
 ```typescript
-console.log('Debug info:', data);
+// デバッグ用ログ（開発時のみ表示）
+console.debug('Debug info:', data);
+
+// 通常のログ
+console.log('Info:', data);
+
+// エラーログ
 console.error('Error occurred:', error);
 ```
 
 ### デバッグ方針
-- ログの追加は必要最小限にとどめる
+- **デバッグ用ログは必ず`console.debug`を使用**し、通常のログと区別する
+- **問題調査時は必要な観点を一度にログ追加**し、都度ログを仕込む非効率な作業を避ける
 - 原因が特定できた段階でログ追加を停止し、修正に取り組む
 - 不要なログ追加は避け、効率的な問題解決を心がける
 

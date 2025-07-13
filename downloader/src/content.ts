@@ -9,6 +9,7 @@ import { ErrorHandler, VideoDownloaderError, createError, withErrorHandling } fr
 
 class VideoDetector {
     private videos: Map<string, VideoInfo> = new Map();
+    private lastSentVideos: Map<string, VideoInfo> = new Map(); // 前回送信した動画情報
     // isDestroyedは各モジュールで管理
     private domObserver: DOMObserver;
     private messageHandler: MessageHandler;
@@ -58,6 +59,12 @@ class VideoDetector {
             if (message.action === 'refreshVideos') {
                 const forceRefresh = message.forceRefresh || false;
                 console.log(`🔄 Manual refresh requested, forceRefresh: ${forceRefresh}`);
+                
+                // リフレッシュ時は前回送信履歴をクリア
+                if (forceRefresh) {
+                    this.lastSentVideos.clear();
+                    console.log('🔄 Cleared last sent videos history for force refresh');
+                }
                 
                 // 動画検出を開始し、完了を待つ
                 this.detectVideos(forceRefresh).then(() => {
@@ -186,29 +193,40 @@ class VideoDetector {
             // 結果を更新
             this.videos = new Map(optimizedVideos.map(v => [v.id, v]));
             
-            // 検出結果をバックグラウンドに送信（即座に送信）
-            console.log(`📤 Sending ${this.videos.size} videos to background`);
-            try {
-                // 拡張機能コンテキストが有効かチェック
-                if (!chrome.runtime?.id) {
-                    console.log('Extension context invalidated, skipping video update');
-                    return;
+            // 検出結果をバックグラウンドに送信（重複チェック付き）
+            const videosToSend = this.getVideosToSend(forceRefresh);
+            console.log(`📤 Sending ${videosToSend.length} videos to background (${this.videos.size} total detected, forceRefresh: ${forceRefresh})`);
+            
+            if (videosToSend.length > 0) {
+                try {
+                    // 拡張機能コンテキストが有効かチェック
+                    if (!chrome.runtime?.id) {
+                        console.log('Extension context invalidated, skipping video update');
+                        return;
+                    }
+                    
+                    console.log('Sending videos to background:', videosToSend);
+                    this.messageHandler.sendVideosToBackground(videosToSend);
+                    console.log('Videos sent to background successfully');
+                    
+                    // 送信した動画情報を記録
+                    videosToSend.forEach(video => {
+                        this.lastSentVideos.set(video.id, { ...video });
+                    });
+                } catch (error) {
+                    // 拡張機能コンテキスト無効化エラーの場合は静かに処理
+                    if ((error as any).message?.includes('Extension context invalidated') || 
+                        (error as any).message?.includes('Could not establish connection')) {
+                        console.log('Extension context invalidated, skipping video update');
+                    } else {
+                        console.error('Failed to send videos to background:', error);
+                        // エラーハンドリングで記録
+                        const sendError = createError.network('動画情報の送信に失敗しました');
+                        ErrorHandler.getInstance().handleError(sendError, { action: 'send_videos_to_background' });
+                    }
                 }
-                
-                console.log('Sending videos to background:', Array.from(this.videos.values()));
-                this.messageHandler.sendVideosToBackground(Array.from(this.videos.values()));
-                console.log('Videos sent to background successfully');
-            } catch (error) {
-                // 拡張機能コンテキスト無効化エラーの場合は静かに処理
-                if ((error as any).message?.includes('Extension context invalidated') || 
-                    (error as any).message?.includes('Could not establish connection')) {
-                    console.log('Extension context invalidated, skipping video update');
-                } else {
-                    console.error('Failed to send videos to background:', error);
-                    // エラーハンドリングで記録
-                    const sendError = createError.network('動画情報の送信に失敗しました');
-                    ErrorHandler.getInstance().handleError(sendError, { action: 'send_videos_to_background' });
-                }
+            } else {
+                console.log('📤 No new videos to send, skipping background update');
             }
             
             // ファイルサイズをバックグラウンドで非同期取得（オプション）
@@ -216,24 +234,39 @@ class VideoDetector {
             console.log(`📏 Getting file sizes for ${urls.length} videos (async)...`);
             
             this.performanceOptimizer.getFileSizesBatch(urls).then(fileSizes => {
+                let hasFileSizeUpdates = false;
                 optimizedVideos.forEach(video => {
                     const fileSize = fileSizes.get(video.url);
-                    if (fileSize !== undefined) {
+                    if (fileSize !== undefined && video.fileSize !== fileSize) {
                         video.fileSize = fileSize;
+                        hasFileSizeUpdates = true;
                     }
                 });
                 
-                // ファイルサイズ更新後に再度送信
-                this.debouncer.debounce(() => {
-                    console.log(`📤 Sending updated videos with file sizes to background`);
-                    try {
-                        if (chrome.runtime?.id) {
-                            this.messageHandler.sendVideosToBackground(Array.from(this.videos.values()));
+                // ファイルサイズが更新された場合のみ再送信
+                if (hasFileSizeUpdates) {
+                    this.debouncer.debounce(() => {
+                        console.log(`📤 Sending updated videos with file sizes to background`);
+                        try {
+                            if (chrome.runtime?.id) {
+                                const videosToSend = this.getVideosToSend();
+                                if (videosToSend.length > 0) {
+                                    this.messageHandler.sendVideosToBackground(videosToSend);
+                                    // 送信した動画情報を記録
+                                    videosToSend.forEach((video: VideoInfo) => {
+                                        this.lastSentVideos.set(video.id, { ...video });
+                                    });
+                                } else {
+                                    console.log('📤 No updated videos to send after file size update');
+                                }
+                            }
+                        } catch (error) {
+                            console.log('Failed to send updated videos:', error);
                         }
-                    } catch (error) {
-                        console.log('Failed to send updated videos:', error);
-                    }
-                }, 1000);
+                    }, 1000);
+                } else {
+                    console.log('📏 No file size updates, skipping re-send');
+                }
             });
             
             console.log(`✅ Video detection completed. Found ${this.videos.size} unique videos.`);
@@ -295,34 +328,73 @@ class VideoDetector {
     // 動画ID抽出はurlUtilsモジュールに移譲
 
     // ファイル名関連の機能はfileUtilsモジュールに移譲
+
+    /**
+     * 送信すべき動画を取得（重複チェック付き）
+     */
+    private getVideosToSend(forceSend: boolean = false): VideoInfo[] {
+        const videosToSend: VideoInfo[] = [];
+        
+        this.videos.forEach((video, id) => {
+            const lastSent = this.lastSentVideos.get(id);
+            
+            // 強制送信または前回送信していない、または内容が変更されている場合のみ送信
+            if (forceSend || !lastSent || this.hasVideoChanged(video, lastSent)) {
+                videosToSend.push(video);
+            }
+        });
+        
+        return videosToSend;
+    }
+
+    /**
+     * 動画情報が変更されているかチェック
+     */
+    private hasVideoChanged(current: VideoInfo, previous: VideoInfo): boolean {
+        return current.title !== previous.title ||
+               current.url !== previous.url ||
+               current.fileSize !== previous.fileSize ||
+               current.type !== previous.type ||
+               current.format !== previous.format;
+    }
 }
 
-// コンテンツスクリプトの初期化
+// コンテンツスクリプトの初期化（シングルトンパターン強化）
 let videoDetector: VideoDetector | null = null;
+let isInitializing = false;
 
 function initializeVideoDetector(): void {
     try {
+        // 既に初期化中または初期化済みの場合はスキップ
+        if (isInitializing || videoDetector) {
+            console.debug('VideoDetector already initialized or initializing, skipping');
+            return;
+        }
+        
         // 拡張機能コンテキストが有効かチェック
         if (!chrome.runtime?.id) {
             console.warn('Extension context invalidated, cannot initialize VideoDetector');
             return;
         }
         
-        if (!videoDetector) {
-            console.log('Initializing VideoDetector...');
-            videoDetector = new VideoDetector();
-        }
+        isInitializing = true;
+        console.log('Initializing VideoDetector...');
+        videoDetector = new VideoDetector();
+        console.log('VideoDetector initialized successfully');
     } catch (error) {
         console.error('Failed to initialize VideoDetector:', error);
+        videoDetector = null;
+    } finally {
+        isInitializing = false;
     }
 }
 
 // 即座に初期化を試行
 initializeVideoDetector();
 
-// ページ読み込み完了後に再初期化を試行
+// ページ読み込み完了後に再初期化を試行（重複を防ぐため一度のみ）
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeVideoDetector);
+    document.addEventListener('DOMContentLoaded', initializeVideoDetector, { once: true });
 } else {
     // 既に読み込み完了している場合は少し遅延して初期化
     setTimeout(initializeVideoDetector, 100);
