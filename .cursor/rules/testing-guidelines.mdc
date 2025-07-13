@@ -1,38 +1,172 @@
-# テストガイドライン
+# テスト駆動開発とテストガイドライン
 
-## テスト構造
+## テスト駆動開発（TDD）
+
+### 基本原則
+- **テストファースト**: 新機能追加時は必ずテストを先に書く
+- **Red-Green-Refactorサイクル**: 失敗するテスト → 最小限の実装 → リファクタリングの順序で開発
+- **設計検証型テスト**: 実装の詳細ではなく、期待する動作を検証するテストを作成
+
+### 開発ワークフロー
+
+#### 新機能開発時
+1. **Red**: 失敗するテストを先に書く
+   ```typescript
+   describe('新機能', () => {
+     it('should perform expected behavior', () => {
+       // 期待する動作を明確化
+       const result = newFeature();
+       expect(result).toBe(expectedValue);
+     });
+   });
+   ```
+
+2. **Green**: 最小限の実装でテストを通す
+   - テストが通る最小限のコードを書く
+   - 実装の詳細は後で改善する
+
+3. **Refactor**: テストが保護されている状態でリファクタリング
+   - コードの重複を除去
+   - 可読性を向上
+   - パフォーマンスを改善
+
+#### バグ修正時
+1. **再現テスト**: バグを再現するテストケースを作成
+2. **修正**: バグを修正してテストを通す
+3. **リファクタリング**: 必要に応じてコードを改善
+
+## テスト環境
+
+### テスト構造
 - [downloader/tests/e2e/](mdc:downloader/tests/e2e/) - E2Eテストディレクトリ
 - [downloader/playwright.config.ts](mdc:downloader/playwright.config.ts) - Playwright設定
 - [downloader/vitest.config.ts](mdc:downloader/vitest.config.ts) - Vitest設定
 
-## E2Eテスト
-- [downloader/tests/e2e/extension.spec.ts](mdc:downloader/tests/e2e/extension.spec.ts) - 拡張機能全体のテスト
-- [downloader/tests/e2e/content-script.spec.ts](mdc:downloader/tests/e2e/content-script.spec.ts) - コンテンツスクリプトのテスト
-- [downloader/tests/e2e/popup.spec.ts](mdc:downloader/tests/e2e/popup.spec.ts) - ポップアップのテスト
-- [downloader/tests/e2e/download.spec.ts](mdc:downloader/tests/e2e/download.spec.ts) - ダウンロード機能のテスト
+### テスト実行ルール
+**コード修正時**:
+- 修正後に必ずテストを実行して通ることを確認
+- ユニットテスト: `npm run test:run`
+- E2Eテスト: `npm run test:e2e`
+- 全テスト: `npm run test:all`
+- **テスト実行時にエラーが発生した場合は即座に修正する**
+- **テストが失敗した場合は、失敗原因を特定して修正してから次の作業に進む**
+
+**コード追加時**:
+- 追加した機能に対応するテストケースを作成
+- ユニットテスト: `src/**/*.test.ts` または `src/**/*.spec.ts`
+- E2Eテスト: `tests/e2e/*.spec.ts`
+- テストカバレッジの確認: `npm run test:coverage`
+- **新機能追加後のテスト実行でエラーが発生した場合は即座に修正する**
+
+### テストファイル命名規則
+- ユニットテスト: `{ファイル名}.test.ts` または `{ファイル名}.spec.ts`
+- E2Eテスト: `tests/e2e/{機能名}.spec.ts`
+
+### テスト作成ガイドライン
+```typescript
+// ユニットテスト例
+import { describe, it, expect, beforeEach } from 'vitest';
+
+describe('機能名', () => {
+  beforeEach(() => {
+    // セットアップ
+  });
+
+  it('正常なケース', () => {
+    // テスト実装
+    expect(result).toBe(expected);
+  });
+
+  it('エラーケース', () => {
+    // エラーテスト
+    expect(() => function()).toThrow();
+  });
+});
+```
+
+### テストの構造
+```typescript
+describe('機能名', () => {
+  describe('正常系', () => {
+    it('should work with valid input', () => {
+      // 正常なケースのテスト
+    });
+  });
+
+  describe('異常系', () => {
+    it('should handle invalid input', () => {
+      // エラーケースのテスト
+    });
+  });
+
+  describe('エッジケース', () => {
+    it('should handle boundary conditions', () => {
+      // 境界値のテスト
+    });
+  });
+});
+```
 
 ## テスト実行
+
+### コマンド
 - プロジェクトルートから `npm test` を実行
 - E2Eテストは `npm run test:e2e` で実行
 - 単体テストは `npm run test:unit` で実行
+- 全テスト: `npm run test:all` (ユニット + E2E)
 
-## テストカバレッジ
+### テストカバレッジ
 - 主要機能の100%カバレッジを目指す
 - エラーハンドリングのテストを含める
 - ユーザーインタラクションのテストを重視
+- **テストカバレッジ80%以上を維持する**
 
-## デバッグ
-- Chrome DevToolsを使用したデバッグ
-- バックグラウンドスクリプト: `chrome://inspect/#extensions`
-- コンテンツスクリプト: ページのDevTools
-- ポップアップ: ポップアップを右クリック → 検証
+## テスト関連の問題と対策
 
-## ログ出力
-```typescript
-console.log('デバッグ情報:', data);
-console.error('エラーが発生しました:', error);
-```
-description:
-globs:
-alwaysApply: false
----
+### よくある問題
+1. **テストが失敗する**
+   - テスト環境のセットアップを確認: `npm install`
+   - テストファイルの構文エラーを確認
+   - モックやスタブの設定を確認
+   - **テスト失敗時は即座に修正し、修正後に再テストを実行する**
+
+2. **E2Eテストが不安定**
+   - ブラウザの起動を確認
+   - セレクターの変更を確認
+   - タイムアウト設定を調整
+   - **不安定なテストは安定化させてから次の作業に進む**
+
+3. **テストカバレッジが低い**
+   - 未テストの機能を特定: `npm run test:coverage`
+   - エッジケースのテストケースを追加
+   - 異常系のテストケースを追加
+   - **テストカバレッジ80%以上を維持する**
+
+4. **テスト実行時のエラー**
+   - **エラーが発生した場合は即座に修正する**
+   - **エラーの原因を特定し、根本的な解決を行う**
+   - **修正後は必ず再テストを実行して成功することを確認する**
+
+## 品質保証ルール
+
+### テスト実行ルール
+- **新機能追加時**: 必ずテストファーストで開発し、テストが通ることを確認
+- **コード修正時**: 修正後に必ずテストを実行し、既存機能が壊れていないことを確認
+- **リファクタリング時**: テストが保護されていることを確認してから実行
+
+### テストの品質
+- **意図の明確化**: テストが何を検証しているかを明確にする
+- **独立性**: テスト間の依存関係を避ける
+- **保守性**: テストコードも本番コードと同様に保守しやすくする
+
+## 成功指標
+
+### 短期指標（1ヶ月）
+- 新機能開発でのTDD適用率: 100%
+- テスト実行時間: 5秒以内
+- テストカバレッジ: 90%以上
+
+### 長期指標（3ヶ月）
+- バグ発生率: 50%削減
+- 開発速度: 20%向上
+- コード品質スコア: 向上

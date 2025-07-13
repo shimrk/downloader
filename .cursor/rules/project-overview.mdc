@@ -1,0 +1,70 @@
+# Chrome拡張機能開発 - プロジェクト概要
+
+## プロジェクト概要
+このプロジェクトは、Chrome拡張機能を使用してブラウザ内の動画を検出・ダウンロードする機能を提供します。
+
+## アーキテクチャ
+
+### ファイル構造
+```
+downloader/
+├── src/
+│   ├── background.ts      # バックグラウンドスクリプト（サービスワーカー）
+│   ├── content.ts         # コンテンツスクリプト（動画検出）
+│   ├── popup.ts           # ポップアップスクリプト（UI制御）
+│   ├── popup.html         # ポップアップUI
+│   └── manifest.json      # 拡張機能マニフェスト
+├── dist/                  # ビルド出力ディレクトリ
+├── webpack.config.js      # Webpack設定
+└── tsconfig.json          # TypeScript設定
+```
+
+### コンポーネント説明
+
+#### 1. Content Script ([downloader/src/content.ts](mdc:downloader/src/content.ts))
+- **役割**: ページ内の動画要素を検出
+- **機能**:
+  - `<video>`要素の検出
+  - `<source>`要素の検出
+  - `<iframe>`要素（埋め込み動画）の検出
+  - DOM変更の監視（MutationObserver）
+  - バックグラウンドスクリプトとの通信
+
+#### 2. Background Script ([downloader/src/background.ts](mdc:downloader/src/background.ts))
+- **役割**: 拡張機能のメインロジック
+- **機能**:
+  - 動画情報の管理
+  - ダウンロード処理
+  - タブ管理
+  - コンテンツスクリプトとの通信
+
+#### 3. Popup ([downloader/src/popup.ts](mdc:downloader/src/popup.ts) + [downloader/src/popup.html](mdc:downloader/src/popup.html))
+- **役割**: ユーザーインターフェース
+- **機能**:
+  - 動画一覧の表示
+  - ダウンロード操作
+  - 検索・クリア機能
+
+## 開発ガイドライン
+
+### TypeScript
+- 厳密な型チェックを有効にする
+- Chrome APIの型定義は `declare const chrome: any;` を使用
+- インターフェースを定義してデータ構造を明確にする
+
+### ビルド確認ルール
+**コード修正時**:
+- 修正後に必ずビルドを実行して成功することを確認: `npm run build`
+- 修正後に必ずテストを実行してすべて成功することを確認: `npm run test:all`
+- ビルドエラーやテストエラーが発生した場合は、TypeScriptエラーやテスト失敗を修正してから次の作業に進む
+- テストファイル（`.test.ts`, `.spec.ts`）はビルド対象から除外されているため、テスト専用のコードは自由に記述可能
+
+**コード追加時**:
+- 新機能追加後は必ずビルドを実行
+- 新機能追加後は必ずテストを実行し、すべて成功することを確認
+- 未使用の変数・関数・型は削除する
+- 型エラーやテスト失敗は即座に修正する
+description:
+globs:
+alwaysApply: false
+---

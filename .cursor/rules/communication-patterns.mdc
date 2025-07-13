@@ -1,7 +1,4 @@
-# 通信パターンガイドライン
-
-## メッセージハンドラー
-- [downloader/src/utils/messageHandler.ts](mdc:downloader/src/utils/messageHandler.ts) - メッセージ処理ユーティリティ
+# 通信パターンとエラーハンドリング
 
 ## 通信パターン
 
@@ -29,26 +26,59 @@ chrome.tabs.sendMessage(tabId, {
 });
 ```
 
-## メッセージ構造
-- `action`: 実行するアクション
-- `data`: 送信するデータ
-- `callback`: レスポンス処理関数
-
 ## エラーハンドリング
-- 通信エラーの適切な処理
-- タイムアウトの設定
-- フォールバック処理の実装
 
-## 非同期通信
-- Promiseベースの通信
-- async/awaitパターンの使用
-- 適切なエラーハンドリング
+### 基本原則
+- すべての非同期処理でtry-catchを使用
+- ユーザーフレンドリーなエラーメッセージを表示
+- Chrome APIのエラーを適切に処理
 
-## セキュリティ
-- メッセージの検証
-- 不正なデータの拒否
-- 適切な権限チェック
-description:
-globs:
-alwaysApply: false
----
+### エラーハンドリングの実装例
+```typescript
+try {
+    const result = await someAsyncOperation();
+    return result;
+} catch (error) {
+    console.error('エラーが発生しました:', error);
+    // ユーザーフレンドリーなエラーメッセージを表示
+    showErrorMessage('操作に失敗しました。もう一度お試しください。');
+    throw error;
+}
+```
+
+### Chrome API エラーハンドリング
+```typescript
+chrome.runtime.sendMessage(message, (response) => {
+    if (chrome.runtime.lastError) {
+        console.error('Chrome API エラー:', chrome.runtime.lastError);
+        // エラー処理
+        return;
+    }
+    // 正常処理
+});
+```
+
+## デバッグ方針
+
+### ログ出力
+```typescript
+// デバッグ用ログ（開発時のみ表示）
+console.debug('Debug info:', data);
+
+// 通常のログ
+console.log('Info:', data);
+
+// エラーログ
+console.error('Error occurred:', error);
+```
+
+### デバッグ方針
+- **デバッグ用ログは必ず`console.debug`を使用**し、通常のログと区別する
+- **問題調査時は必要な観点を一度にログ追加**し、都度ログを仕込む非効率な作業を避ける
+- 原因が特定できた段階でログ追加を停止し、修正に取り組む
+- 不要なログ追加は避け、効率的な問題解決を心がける
+
+### Chrome DevTools
+- バックグラウンドスクリプト: `chrome://inspect/#extensions`
+- コンテンツスクリプト: ページのDevTools
+- ポップアップ: ポップアップを右クリック → 検証
