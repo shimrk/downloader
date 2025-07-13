@@ -208,14 +208,14 @@ class PopupManager {
                     await this.loadVideos();
                 }
             } else {
-                // 動画が検出されている場合はエラーメッセージを表示しない
+                // レスポンスが成功でない場合の処理
                 const videoCount = response?.videoCount ?? 0;
-                console.debug(`Popup: Error response received - videoCount: ${videoCount}, response:`, response);
+                console.debug(`Popup: Non-success response received - videoCount: ${videoCount}, response:`, response);
                 
                 // 動画が検出されている場合、または既存の動画がある場合は成功として扱う
                 if (videoCount > 0 || this.videos.length > 0) {
                     const actualCount = videoCount > 0 ? videoCount : this.videos.length;
-                    console.debug(`Popup: Videos detected (${actualCount}) despite error response, treating as success`);
+                    console.debug(`Popup: Videos detected (${actualCount}) despite non-success response, treating as success`);
                     this.showStatus(`${actualCount}個の動画を検出しました`, 'success');
                     await this.loadVideos();
                 } else {

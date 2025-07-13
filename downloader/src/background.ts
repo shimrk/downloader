@@ -244,11 +244,6 @@ class VideoManager {
         const isFromPopup = stack?.includes('popup.js') || stack?.includes('popup.ts');
         console.log('Background: getVideos called from popup:', isFromPopup);
         
-        // テスト環境では、動画が存在しない場合でもモックデータを返す
-        if (videos.length === 0 && isFromPopup) {
-            console.log('Background: No videos found, but this is a popup request - returning empty array');
-        }
-        
         sendResponse({ videos });
     }
 
@@ -426,11 +421,12 @@ class VideoManager {
 
             console.log('Refreshing videos for tab:', targetTabId);
             
-            // 動画リストをクリア（新しい検索の準備）
-            // ただし、クリア前に現在の動画数を記録
+            // 既存の動画数を記録（クリアしない）
             const previousVideoCount = this.videos.size;
-            this.videos.clear();
-            console.log(`Background: Cleared ${previousVideoCount} existing videos for refresh`);
+            console.log(`Background: Starting refresh with ${previousVideoCount} existing videos`);
+            
+            // 一時的な動画リストを作成（既存の動画を保持）
+            const tempVideos = new Map(this.videos);
             
             // コンテンツスクリプトにリフレッシュメッセージを送信
             try {
@@ -480,9 +476,9 @@ class VideoManager {
                 await new Promise(resolve => setTimeout(resolve, checkInterval));
                 attempts++;
                 
-                // 動画が検出されたかチェック
-                if (this.videos.size > 0) {
-                    console.log(`Background: Videos detected after ${attempts * checkInterval}ms`);
+                // 新しい動画が検出されたかチェック
+                if (this.videos.size > tempVideos.size) {
+                    console.log(`Background: New videos detected after ${attempts * checkInterval}ms (${tempVideos.size} -> ${this.videos.size})`);
                     sendResponse({ success: true, message: `${this.videos.size}個の動画を検出しました`, videoCount: this.videos.size });
                     return;
                 }

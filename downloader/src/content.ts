@@ -66,16 +66,38 @@ class VideoDetector {
                     console.log('🔄 Cleared last sent videos history for force refresh');
                 }
                 
+                // 既存の動画数を記録
+                const existingVideoCount = this.videos.size;
+                console.log(`🔄 Starting refresh with ${existingVideoCount} existing videos`);
+                
                 // 動画検出を開始し、完了を待つ
                 this.detectVideos(forceRefresh).then(() => {
-                    console.log('🔄 Video detection completed for refresh request');
+                    console.log(`🔄 Video detection completed for refresh request (${existingVideoCount} -> ${this.videos.size} videos)`);
                     // 動画検出が完了したら、バックグラウンドへの送信も完了するまで少し待つ
                     setTimeout(() => {
-                        sendResponse({ success: true, message: '動画検出が完了しました' });
+                        const finalVideoCount = this.videos.size;
+                        const message = finalVideoCount > 0 ? 
+                            `${finalVideoCount}個の動画を検出しました` : 
+                            '動画が見つかりませんでした';
+                        sendResponse({ 
+                            success: true, 
+                            message: message,
+                            videoCount: finalVideoCount
+                        });
                     }, 500);
                 }).catch((error) => {
                     console.error('🔄 Video detection failed for refresh request:', error);
-                    sendResponse({ success: false, error: '動画検出に失敗しました' });
+                    // 既存の動画がある場合は成功として扱う
+                    if (this.videos.size > 0) {
+                        console.log(`🔄 Returning ${this.videos.size} existing videos despite detection error`);
+                        sendResponse({ 
+                            success: true, 
+                            message: `${this.videos.size}個の動画を検出しました`,
+                            videoCount: this.videos.size
+                        });
+                    } else {
+                        sendResponse({ success: false, error: '動画検出に失敗しました' });
+                    }
                 });
                 
                 return true; // 非同期レスポンスのため
@@ -190,8 +212,12 @@ class VideoDetector {
             const optimizedVideos = this.performanceOptimizer.optimizeDuplicateCheck(newVideos, new Map());
             console.log(`📊 After optimization: ${optimizedVideos.length} videos`);
             
-            // 結果を更新
-            this.videos = new Map(optimizedVideos.map(v => [v.id, v]));
+            // 既存の動画を保持しながら新しい検出結果を追加
+            const existingVideos = new Map(this.videos);
+            optimizedVideos.forEach(video => {
+                existingVideos.set(video.id, video);
+            });
+            this.videos = existingVideos;
             
             // 検出結果をバックグラウンドに送信（重複チェック付き）
             const videosToSend = this.getVideosToSend(forceRefresh);
